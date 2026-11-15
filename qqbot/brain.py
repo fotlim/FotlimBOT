@@ -1,4 +1,4 @@
-"""核心大脑：决策 + 生成 + 媒体（看图 / 发表情）+ 事实抽取。纯业务，读写 Store。"""
+"""核心大脑：决策 + 生成 + 媒体（看图/发图/语音）+ 事实抽取。纯业务，读写 Store。"""
 from __future__ import annotations
 
 import base64
@@ -89,10 +89,13 @@ class Brain:
                         pass
 
     def _record_user(self, inbound: Inbound) -> None:
+        has_img = any(s.type == "image" for s in inbound.segments)
+        has_voc = any(s.type == "voice" for s in inbound.segments)
+        content = inbound.text or ("[图片]" if has_img else ("[语音]" if has_voc else "[消息]"))
         self.store.add_message(
             channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
             sender_id=inbound.sender_id, sender_name=inbound.sender_name,
-            role="user", content=inbound.text or "[图片]", msg_id=inbound.message_id,
+            role="user", content=content, msg_id=inbound.message_id,
             meta={"segments": [s.type for s in inbound.segments]},
         )
         self._extract_facts(inbound.text, inbound.peer_id)
@@ -123,7 +126,8 @@ class Brain:
 
     def respond(self, inbound: Inbound, caps: Capabilities) -> Outbound | None:
         images = [s for s in inbound.segments if s.type == "image"]
-        if not inbound.text and not images:
+        voices = [s for s in inbound.segments if s.type == "voice"]
+        if not inbound.text and not images and not voices:
             return None
         self._record_user(inbound)
         if inbound.scene == "group" and not inbound.mentioned:
@@ -142,6 +146,8 @@ class Brain:
                                + "\n可以自然地提起，但别生硬。）",
                 })
         messages += self.store.history(inbound.peer_id, 12)
+        if voices and not inbound.text:
+            messages.append({"role": "system", "content": "（对方发来一条语音，你听不到内容，可以自然地请对方打字，或直接回应。）"})
 
         vision_used = False
         if images and caps.send_image:

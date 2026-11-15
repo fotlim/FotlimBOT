@@ -54,6 +54,8 @@ def _build_message(out: Outbound) -> list[dict]:
             msg.append({"type": "image", "data": {"file": s.data["file"]}})
         elif s.type == "face" and s.data.get("id"):
             msg.append({"type": "face", "data": {"id": str(s.data["id"])}})
+        elif s.type == "record" and s.data.get("file"):
+            msg.append({"type": "record", "data": {"file": s.data["file"]}})
     return msg
 
 

@@ -12,6 +12,7 @@ import urllib.parse
 
 from .store import Store
 from .types import Outbound, Segment
+from . import voice
 
 
 class Admin:
@@ -136,6 +137,14 @@ class Admin:
                     segs = []
                     if text:
                         segs.append(Segment.text(text))
+                    if d.get("voice_text"):
+                        vp = voice.synth(d["voice_text"])
+                        if vp:
+                            try:
+                                vb = base64.b64encode(open(vp, "rb").read()).decode()
+                                segs.append(Segment("record", {"file": "base64://" + vb}))
+                            except Exception:
+                                pass
                     if d.get("sticker"):
                         f = admin._pick_sticker()
                         if f:
