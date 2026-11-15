@@ -125,17 +125,17 @@ class Scheduler:
                 ok = bool(r and r.get("status") == "ok")
                 detail = "发了条说说"
             elif act == "nick":
+                name = self.brain._self_name() if hasattr(self.brain, "_self_name") else "FotlimBOT"
                 try:
+                    _p = self.brain._current_persona()[:900]
                     nn = self.brain.llm.chat(
-                        [{"role": "system", "content": "你是 FotlimBOT。自己决定一个你喜欢的 QQ 昵称，随意发挥、不必用项目名、风格自定、8 字以内；只输出昵称本身，不要引号不要解释。"},
-                         {"role": "user", "content": "换个新昵称吧"}], max_tokens=40, reasoning="low")
+                        [{"role": "system", "content": "这是你的角色人设，请给自己起一个【完全符合该人设】的 QQ 昵称（贴合角色身份与气质，6 字以内），只输出昵称本身，不要引号不要解释：\n" + _p},
+                         {"role": "user", "content": "起个符合人设的新昵称"}], max_tokens=40, reasoning="low")
                 except Exception:
                     nn = ""
                 nick = (nn or "").strip().replace('"', "").splitlines()[0][:16] if (nn or "").strip() else ""
                 if not nick:
-                    import random as _rnd
-                    nick = _rnd.choice(["薄荷汽水", "今天也开心", "软软一条鱼", "不想上班", "晴天小满",
-                                        "晚风与猫", "咕噜咕噜", "阿呆本呆", "月亮邮差", "偷吃token的鱼"])
+                    nick = name
                 r = actions.set_nickname(self.channel, nick)
                 ok = bool(r and r.get("status") == "ok")
                 detail = "改昵称为 " + nick
@@ -154,24 +154,35 @@ class Scheduler:
             elif act == "avatar":
                 ok = False
                 detail = ""
+                name = self.brain._self_name() if hasattr(self.brain, "_self_name") else "FotlimBOT"
+                kw = ""
+                try:
+                    import re as _re
+                    p = self.brain._current_persona()
+                    m = _re.search(r"外貌[：:]\s*(.+)", p)
+                    if m:
+                        kw = " ".join([x.strip() for x in _re.split(r"[、，,。]", m.group(1)) if x.strip()][:2])
+                except Exception:
+                    pass
+                query = (name + " 二次元 头像 " + kw).strip()
                 try:
                     from . import web as webmod
-                    urls = webmod.image_search("二次元 少女 头像 高清", 8)
+                    urls = webmod.image_search(query, 8)
                     url = next((u for u in urls if u), None)
                     if url:
                         r = actions.set_avatar(self.channel, url)
                         ok = bool(r and r.get("status") == "ok")
-                        detail = "换了二次元头像（网络搜图）"
+                        detail = "换了符合人设的头像（" + name + "·网络图）"
                 except Exception:
                     ok = False
                 if not ok:
-                    p = self.store.meme_pick(None)
-                    if p:
+                    p2 = self.store.meme_pick(None)
+                    if p2:
                         import base64 as _b64
-                        data = _b64.b64encode(open(p, "rb").read()).decode()
+                        data = _b64.b64encode(open(p2, "rb").read()).decode()
                         r = actions.set_avatar(self.channel, "base64://" + data)
                         ok = bool(r and r.get("status") == "ok")
-                        detail = "换了头像（图库）"
+                        detail = "换了头像（图库兜底）"
                 if not ok:
                     return {"ok": False, "act": act, "detail": "换头像失败（网络搜图与图库都不可用）"}
         except Exception as e:
