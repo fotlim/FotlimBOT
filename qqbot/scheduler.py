@@ -1,4 +1,4 @@
-"""调度器：主动发言 + 定时。保守策略，避免打扰。"""
+"""调度器：主动发言 + 定时。保守策略，运行时可开关。"""
 from __future__ import annotations
 
 import datetime
@@ -23,15 +23,16 @@ class Scheduler:
         self.channel = channel
         self.store = store
         self.cfg = cfg
-        self.qs = _hm(cfg.quiet_start)   # 安静开始（分钟）
-        self.qe = _hm(cfg.quiet_end)     # 安静结束
+        self.qs = _hm(cfg.quiet_start)
+        self.qe = _hm(cfg.quiet_end)
+        self.enabled = bool(getattr(cfg, "proactive", True))
+
+    def set_enabled(self, v: bool) -> None:
+        self.enabled = bool(v)
 
     def start(self) -> None:
-        if not self.cfg.proactive:
-            print("[sched] proactive disabled", flush=True)
-            return
         threading.Thread(target=self._loop, daemon=True).start()
-        print("[sched] started", flush=True)
+        print(f"[sched] started (enabled={self.enabled})", flush=True)
 
     def _in_quiet(self, now: datetime.datetime) -> bool:
         cur = now.hour * 60 + now.minute
@@ -49,6 +50,8 @@ class Scheduler:
             time.sleep(120)
 
     def _tick(self) -> None:
+        if not self.enabled:
+            return
         if not getattr(self.channel, "connected", False):
             return
         now = datetime.datetime.now()

@@ -35,9 +35,10 @@ def main() -> int:
 
     if cfg.channel == "mock":
         from qqbot.channels.mock import run_demo
+        sched = Scheduler(brain, _NullChannel(), store, cfg)
         try:
             Admin(cfg.admin_host, cfg.admin_port, cfg.admin_token, store, _NullChannel(), brain,
-                  time.time(), sticker_dir=cfg.sticker_dir).start()
+                  time.time(), sticker_dir=cfg.sticker_dir, scheduler=sched, cfg=cfg).start()
         except Exception as e:
             print("[admin] skip:", repr(e), flush=True)
         run_demo(brain)
@@ -47,9 +48,10 @@ def main() -> int:
     if cfg.channel == "onebot11":
         from qqbot.channels.onebot11 import OneBot11Channel
         ch = OneBot11Channel(cfg.onebot_ws)
+        sched = Scheduler(brain, ch, store, cfg)
         Admin(cfg.admin_host, cfg.admin_port, cfg.admin_token, store, ch, brain,
-              time.time(), sticker_dir=cfg.sticker_dir).start()
-        Scheduler(brain, ch, store, cfg).start()
+              time.time(), sticker_dir=cfg.sticker_dir, scheduler=sched, cfg=cfg).start()
+        sched.start()
         ch.run(brain)
         return 0
 

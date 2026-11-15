@@ -157,3 +157,44 @@ class Store:
                 (subject, limit),
             ).fetchall()
         return [{"k": k, "v": v} for k, v in rows]
+
+    def peers_with_stats(self) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT peer_id, COUNT(*) c, MAX(ts) t, MAX(scene) FROM messages GROUP BY peer_id ORDER BY t DESC"
+            ).fetchall()
+        return [{"peer_id": p, "count": c, "last": t, "scene": s} for p, c, t, s in rows]
+
+    def messages_for_peer(self, peer_id: str, limit: int = 100) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT ts,role,sender_name,content FROM messages WHERE peer_id=? ORDER BY id DESC LIMIT ?",
+                (peer_id, limit),
+            ).fetchall()
+        return [{"ts": t, "role": r, "name": n, "content": c} for t, r, n, c in reversed(rows)]
+
+    def all_facts(self, limit: int = 200) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id,subject,skey,svalue,confidence,locked FROM facts WHERE status='active' ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [{"id": i, "peer": s, "k": k, "v": v, "conf": cf, "locked": bool(l)}
+                for i, s, k, v, cf, l in rows]
+
+    def fact_delete(self, fid: int) -> None:
+        with self._lock:
+            self.conn.execute("UPDATE facts SET status='deleted' WHERE id=?", (fid,))
+            self.conn.commit()
+
+    def fact_set_locked(self, fid: int, locked: bool) -> None:
+        with self._lock:
+            self.conn.execute("UPDATE facts SET locked=? WHERE id=?", (1 if locked else 0, fid))
+            self.conn.commit()
+
+    def actions_recent(self, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT ts,kind,peer_id,detail FROM actions ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [{"ts": t, "kind": k, "peer": p, "detail": d} for t, k, p, d in rows]
