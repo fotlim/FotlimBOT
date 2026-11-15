@@ -78,6 +78,17 @@ class AstrBotHost:
                 print("[astr] init err", cls, repr(e), flush=True)
         print(f"[astr] plugins loaded: {[m.get('name') for m in self.metas]}", flush=True)
 
+    def reload(self) -> None:
+        self.plugins = []
+        self.metas = []
+        try:
+            for m in list(sys.modules.keys()):
+                if m.startswith("astrbot_plugin_"):
+                    del sys.modules[m]
+        except Exception:
+            pass
+        self.load()
+
     def list(self):
         return self.metas
 

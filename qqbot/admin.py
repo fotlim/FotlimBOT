@@ -4,12 +4,16 @@ from __future__ import annotations
 import base64
 import glob
 import http.server
+import io
 import json
 import os
 import random
+import shutil
 import threading
 import time
 import urllib.parse
+import urllib.request
+import zipfile
 
 from .store import Store
 from .types import Outbound, Segment
@@ -20,6 +24,15 @@ from . import actions
 from . import web as webmod
 from . import meme as mememod
 from . import profile as profilemod
+
+
+MARKET = [
+    {"name": "helloworld", "author": "FotlimBOT", "repo": "", "desc": "示例/测试插件（内置）", "compat": "简单指令 ✅"},
+    {"name": "emotionai", "author": "tengtian3", "repo": "tengtian3/astrbot-plugin-emotionai", "desc": "情感智能：好感/心情/思维链", "compat": "复杂·可能不兼容"},
+    {"name": "emotionai_pro", "author": "foorgange", "repo": "foorgange/astrbot-plugin-emotionai_pro", "desc": "情感智能 Pro：好感度/记忆/心情", "compat": "复杂·可能不兼容"},
+    {"name": "biocore", "author": "Johnhmzm", "repo": "Johnhmzm/astrbot_plugin_biocore", "desc": "拟态情绪核心：数值情感/关系轨迹", "compat": "复杂·可能不兼容"},
+    {"name": "group_daily_analysis", "author": "SXP-Simon", "repo": "SXP-Simon/astrbot_plugin_qq_group_daily_analysis", "desc": "群日常分析/总结", "compat": "复杂·可能不兼容"},
+]
 
 
 _HTML = r'''<!doctype html><html lang="zh"><head><meta charset="utf-8">
@@ -199,7 +212,15 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
       <div class="toolbar"><button class="act gray" onclick="loadFeeds()">拉取好友动态</button><span class="mini">点「赞」给好友说说点赞</span></div>
       <table><thead><tr><th>昵称</th><th>内容</th><th>tid</th><th>操作</th></tr></thead><tbody id="feedRows"></tbody></table>
     </div>
-    <div class="card"><h3>AstrBot 插件（简单指令/回复类）</h3><div id="astrRows" class="mini">加载中…</div><div class="mini" style="margin-top:6px">把插件放到 <code>data/astrbot_plugins/&lt;名字&gt;/main.py</code>，重启加载。仅支持纯指令/回复类插件，依赖 LLM Provider/DB/WebUI 的复杂插件不支持。</div></div>
+    <div class="card"><h3>AstrBot 插件</h3>
+      <div class="toolbar">GitHub 仓库 <input id="plugUrl" size="32" placeholder="https://github.com/owner/repo"><button class="act" onclick="installPlugin()">一键安装</button><button class="act gray" onclick="reloadPlugins()">重载</button> <span id="plugRet" class="r"></span></div>
+      <div class="toolbar">上传ZIP <input type="file" id="plugFile" accept=".zip"><input id="plugName" size="10" placeholder="插件名(可空)"><button class="act" onclick="uploadPlugin()">上传安装</button></div>
+      <div id="astrRows" class="mini" style="margin-top:8px">加载中…</div>
+      <hr style="border-color:#232733;margin:10px 0">
+      <div class="toolbar"><b>插件市场</b> <button class="act gray" onclick="loadMarket()">刷新市场</button> <span class="mini" id="marketInfo"></span></div>
+      <div id="marketRows" class="mini"></div>
+      <div class="mini" style="margin-top:6px">仅支持纯指令/回复类插件；标注「复杂」的多依赖 AstrBot 的 LLM/DB/WebUI，可能装上也跑不起来。</div>
+    </div>
   </section>
   <section id="tab-memes" class="page">
     <div class="card"><h3>表情包图库</h3>
@@ -251,7 +272,13 @@ async function loadLogs(){const l=await api('/api/logs');const box=document.getE
 function setLogSize(v){localStorage.setItem('logSize',String(v));document.getElementById('logbox').style.fontSize=v+'px'}
 async function loadEmotions(){const e=await api('/api/emotions');document.getElementById('emoRows').innerHTML=(e.emotions||[]).map(x=>'<tr><td>'+x.peer_id+'</td><td><span class=tag>'+x.mood+'</span></td><td>'+x.affinity+'</td><td>'+x.p+'</td><td>'+x.a+'</td><td>'+x.d+'</td><td>'+x.energy+'</td><td><button class="act lock" onclick="document.getElementById(\'ePeer\').value=\''+x.peer_id+'\';document.getElementById(\'eAff\').value=\''+x.affinity+'\'">选中</button></td></tr>').join('')||'<tr><td colspan=8 class=dim>暂无情绪记录（聊两句就有了）</td></tr>'}
 async function setEmotion(){const peer=document.getElementById('ePeer').value,mood=document.getElementById('eMood').value,aff=document.getElementById('eAff').value;if(!peer)return;const body={peer};if(mood)body.mood=mood;if(aff!=='')body.affinity=parseFloat(aff);const r=await api('/api/emotion/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});document.getElementById('eRet').textContent=r.ok?'已更新':'失败';loadEmotions()}
-async function loadCaps(){try{const r=await api('/api/cap/whoami');if(r&&r.nickname)document.getElementById('curNick').textContent=r.nickname}catch(e){}try{const p=await api('/api/plugins');document.getElementById('astrRows').innerHTML=(p.plugins||[]).map(m=>'<div>· '+(m.name||'?')+' v'+(m.version||'')+' — '+(m.desc||'')+'</div>').join('')||'（暂无插件）'}catch(e){}}
+async function loadMarket(){try{const r=await api('/api/market');document.getElementById('marketInfo').textContent='共 '+((r.market||[]).length)+' 个';document.getElementById('marketRows').innerHTML=(r.market||[]).map(x=>'<div style="margin:6px 0;display:flex;justify-content:space-between;gap:8px;align-items:center"><div><b>'+x.name+'</b> <span class="mini">'+x.author+' · '+x.compat+'</span><br><span class="mini">'+(x.desc||'')+'</span></div>'+(x.repo?'<button class="act" onclick="installMarket(\''+x.repo+'\')">安装</button>':'<span class="mini">内置</span>')+'</div>').join('')||'（市场为空）'}catch(e){}}
+async function installMarket(repo){if(!repo)return;document.getElementById('plugRet').textContent='安装 '+repo+' 中…';const r=await api('/api/plugins/install_github',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:repo})});document.getElementById('plugRet').textContent=r.ok?('已安装 '+(r.name||'')):('失败:'+(r.msg||''));loadCaps()}
+async function loadCaps(){try{const r=await api('/api/cap/whoami');if(r&&r.nickname)document.getElementById('curNick').textContent=r.nickname}catch(e){}try{const p=await api('/api/plugins');const metas=p.plugins||[];const dirs=p.dirs||[];document.getElementById('astrRows').innerHTML=(dirs.length?dirs.map(d=>{const m=metas.find(x=>x.name===d)||{};return '<div style="margin:4px 0">· '+d+' '+(m.version?('v'+m.version):'')+' — '+(m.desc||'')+' <button class="act del" onclick="delPlugin(\''+d+'\')">卸载</button></div>'}).join(''):'（暂无插件）')}catch(e){}}
+async function installPlugin(){const url=document.getElementById('plugUrl').value;if(!url)return;document.getElementById('plugRet').textContent='安装中…';const r=await api('/api/plugins/install_github',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});document.getElementById('plugRet').textContent=r.ok?('已安装 '+(r.name||'')):('失败:'+(r.msg||''));loadCaps()}
+async function reloadPlugins(){const r=await api('/api/plugins/reload',{method:'POST'});document.getElementById('plugRet').textContent='已重载 '+((r.plugins||[]).length)+' 个';loadCaps()}
+async function delPlugin(name){if(!confirm('卸载 '+name+' ?'))return;const r=await api('/api/plugins/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});document.getElementById('plugRet').textContent=r.ok?'已卸载':('失败:'+(r.msg||''));loadCaps()}
+function uploadPlugin(){const f=document.getElementById('plugFile').files[0];if(!f)return;const name=document.getElementById('plugName').value||f.name.replace(/\.zip$/i,'');const rd=new FileReader();rd.onload=async()=>{const b64=String(rd.result).split(',')[1];const r=await api('/api/plugins/upload_zip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,data:b64})});document.getElementById('plugRet').textContent=r.ok?('已上传 '+(r.name||name)):('失败:'+(r.msg||''));loadCaps()};rd.readAsDataURL(f)}
 async function doNick(){const nickname=document.getElementById('capNick').value;if(!nickname)return;const r=await api('/api/cap/nickname',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nickname})});document.getElementById('capRet').textContent=r.ok?'已改':'失败';loadCaps()}
 async function doSign(){const text=document.getElementById('capSign').value;if(!text)return;const r=await api('/api/cap/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});document.getElementById('capRet').textContent=r.ok?'已改':'失败'}
 async function doAvatar(){const file=document.getElementById('capAvatar').value;if(!file)return;const r=await api('/api/cap/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file})});document.getElementById('avatarRet').textContent=r.ok?'已提交':('失败:'+(r.msg||''))}
@@ -405,6 +432,89 @@ class Admin:
             segs.append(Segment("face", {"id": str(d["face"])}))
         return segs
 
+    def _plugin_dir(self) -> str:
+        return getattr(self.cfg, "plugins_dir", "")
+
+    def _extract_zip(self, zb: bytes, name: str) -> bool:
+        base = self._plugin_dir()
+        os.makedirs(base, exist_ok=True)
+        tmp = os.path.join(base, "_tmp_" + name)
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(zb)) as zf:
+            for member in zf.namelist():
+                if member.startswith("/") or ".." in member.split("/"):
+                    continue
+                zf.extract(member, tmp)
+        entries = os.listdir(tmp)
+        root = tmp
+        if "main.py" not in entries and len(entries) == 1 and os.path.isdir(os.path.join(tmp, entries[0])):
+            root = os.path.join(tmp, entries[0])
+        dest = os.path.join(base, name)
+        shutil.rmtree(dest, ignore_errors=True)
+        shutil.move(root, dest)
+        if os.path.exists(tmp):
+            shutil.rmtree(tmp, ignore_errors=True)
+        has = os.path.isfile(os.path.join(dest, "main.py"))
+        host = getattr(self.channel, "host", None)
+        if host is not None:
+            host.reload()
+        return has
+
+    def _install_zip(self, name: str, data_b64: str) -> dict:
+        name = (name or "plugin").strip().replace("/", "_")
+        try:
+            zb = base64.b64decode(data_b64.split(",")[-1])
+        except Exception as e:
+            return {"ok": False, "msg": "base64 解码失败:" + str(e)[:80]}
+        try:
+            has = self._extract_zip(zb, name)
+            return {"ok": has, "name": name, "msg": "已安装" if has else "解压后没找到 main.py"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)[:120]}
+
+    def _install_github(self, url: str) -> dict:
+        url = (url or "").strip().rstrip("/")
+        if not url:
+            return {"ok": False, "msg": "空链接"}
+        clean = url[:-4] if url.endswith(".git") else url
+        parts = [x for x in clean.split("/") if x]
+
+        def fetch(u):
+            gu = "https://ghfast.top/" + u if "github.com" in u and "ghfast.top" not in u else u
+            req = urllib.request.Request(gu, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=40) as r:
+                return r.read(80_000_000)
+
+        if clean.endswith(".zip"):
+            name = parts[-1][:-4] if parts else "plugin"
+            try:
+                zb = fetch(clean)
+            except Exception as e:
+                return {"ok": False, "msg": str(e)[:140]}
+        else:
+            if "github.com" in parts:
+                i = parts.index("github.com")
+                owner_repo = parts[i + 1] + "/" + parts[i + 2]
+            else:
+                owner_repo = "/".join(parts[-2:])
+            name = owner_repo.split("/")[-1]
+            zb = None
+            last = None
+            for br in ("main", "master"):
+                try:
+                    zb = fetch(f"https://github.com/{owner_repo}/archive/refs/heads/{br}.zip")
+                    break
+                except Exception as e:
+                    last = e
+            if zb is None:
+                return {"ok": False, "msg": "下载失败:" + str(last)[:120]}
+        try:
+            has = self._extract_zip(zb, name)
+            return {"ok": has, "name": name, "msg": "已安装 " + name if has else "解压后没找到 main.py"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)[:120]}
+
     def start(self) -> None:
         admin = self
 
@@ -464,7 +574,15 @@ class Admin:
                 elif p == "/api/modules": self._json(200, {"modules": admin._modules()})
                 elif p == "/api/plugins":
                     host = getattr(admin.channel, "host", None)
-                    self._json(200, {"plugins": host.list() if host is not None else []})
+                    metas = host.list() if host is not None else []
+                    try:
+                        base = getattr(admin.cfg, "plugins_dir", "")
+                        dirs = sorted([x for x in os.listdir(base) if os.path.isdir(os.path.join(base, x)) and not x.startswith("_tmp_")])
+                    except Exception:
+                        dirs = []
+                    self._json(200, {"plugins": metas, "dirs": dirs})
+                elif p == "/api/market":
+                    self._json(200, {"market": MARKET})
                 elif p == "/api/acl": self._json(200, {"white": admin.store.kv_list_get("acl:white"), "black": admin.store.kv_list_get("acl:black")})
                 elif p == "/api/logs": self._json(200, {"lines": logbus.lines(300)})
                 elif p == "/api/emotions": self._json(200, {"emotions": emotion.snapshot(admin.store, admin.store.get_settings())})
@@ -604,6 +722,28 @@ class Admin:
                 elif p == "/api/autonomy/run":
                     res = admin.scheduler._autonomy(force=True) if admin.scheduler is not None else {"ok": False, "detail": "无调度器"}
                     self._json(200, res)
+                elif p == "/api/plugins/reload":
+                    host = getattr(admin.channel, "host", None)
+                    if host is not None:
+                        host.reload()
+                    self._json(200, {"ok": True, "plugins": (host.list() if host else [])})
+                elif p == "/api/plugins/delete":
+                    name = str(d.get("name", ""))
+                    base = getattr(admin.cfg, "plugins_dir", "")
+                    dd = os.path.join(base, name)
+                    try:
+                        if name and os.path.isdir(dd):
+                            shutil.rmtree(dd)
+                        host = getattr(admin.channel, "host", None)
+                        if host is not None:
+                            host.reload()
+                        self._json(200, {"ok": True})
+                    except Exception as e:
+                        self._json(200, {"ok": False, "msg": str(e)[:120]})
+                elif p == "/api/plugins/install_github":
+                    self._json(200, admin._install_github(str(d.get("url", ""))))
+                elif p == "/api/plugins/upload_zip":
+                    self._json(200, admin._install_zip(str(d.get("name", "")), str(d.get("data", ""))))
                 elif p == "/api/model":
                     llm = admin.brain.llm
                     if d.get("base"): llm.base = d["base"]
