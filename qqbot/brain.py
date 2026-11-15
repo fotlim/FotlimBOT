@@ -114,7 +114,7 @@ class Brain:
                                content=content, msg_id=inbound.message_id,
                                meta={"segments": [s.type for s in inbound.segments]})
         self._extract_facts(inbound.text, inbound.peer_id)
-        if inbound.text:
+        if inbound.text and self.store.get_settings()["memory"].get("use_profile", True):
             try:
                 from . import profile as profilemod
                 profilemod.append_speech(getattr(self, "memory_dir", ""), inbound.scene,
@@ -253,27 +253,36 @@ class Brain:
         messages = [{"role": "system", "content": self._sys()}]
         if emo:
             messages.append({"role": "system", "content": emotion.prompt(emo)})
-        fb = self._facts_block(inbound.peer_id)
-        if fb:
-            messages.append({"role": "system", "content": fb})
         if web_ctx:
             messages.append({"role": "system", "content": web_ctx})
-        if st.get("profile", {}).get("enabled", True):
-            try:
-                from . import profile as profilemod
-                _base = getattr(self, "memory_dir", "")
-                _ana = profilemod.read_analysis(_base, inbound.scene, inbound.peer_id, inbound.sender_name)
-                _samp = "" if _ana else profilemod.read_speech(_base, inbound.scene, inbound.peer_id, inbound.sender_name, 300)
-                if _ana or _samp:
-                    _who = inbound.sender_name or inbound.peer_id
-                    _ctx = _ana[:400] if _ana else ("ta 平时这样说：" + _samp[-280:])
-                    messages.append({"role": "system", "content": "（你了解对方「" + _who + "」：" + _ctx + "。回复时贴合 ta 的性格和说话方式，但别点破你在分析 ta。）"})
-            except Exception:
-                pass
-        if inbound.text and use_mem:
-            past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
-            if past:
-                messages.append({"role": "system", "content": "（你记得对方以前说过：\n" + "\n".join("- " + p for p in past) + "\n可以自然地提起，但别生硬。）"})
+        if use_mem:
+            mem = st.get("memory", {})
+            parts = []
+            if mem.get("use_facts", True):
+                ff = self.store.facts_for(inbound.peer_id)
+                if ff:
+                    parts.append("· 事实：" + "；".join(f["k"] + "：" + f["v"] for f in ff))
+            if mem.get("use_profile", True):
+                _ana = ""
+                _samp = ""
+                try:
+                    from . import profile as profilemod
+                    _ana = profilemod.read_analysis(getattr(self, "memory_dir", ""), inbound.scene, inbound.peer_id, inbound.sender_name)
+                    if not _ana:
+                        _samp = profilemod.read_speech(getattr(self, "memory_dir", ""), inbound.scene, inbound.peer_id, inbound.sender_name, 260)
+                except Exception:
+                    pass
+                if _ana:
+                    parts.append("· 性格：" + _ana[:350].replace("\n", " "))
+                elif _samp:
+                    parts.append("· ta 平时这样说：" + _samp.replace("\n", " ")[-240:])
+            if inbound.text:
+                past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
+                if past:
+                    parts.append("· 相关旧话：" + " / ".join(p[:40] for p in past))
+            if parts:
+                _who = inbound.sender_name or inbound.peer_id
+                messages.append({"role": "system", "content": "（关于「" + _who + "」的记忆：\n" + "\n".join(parts) + "\n自然运用，别生硬引用。）"})
         hist = self.store.history(inbound.peer_id, hist_n)
         if hist and hist[-1].get("role") == "user":
             messages += hist[:-1]

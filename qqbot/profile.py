@@ -68,7 +68,7 @@ def analyze(base: str, scene: str, peer: str, nick: str, llm) -> str | None:
              "并给一句“和 ta 聊天该怎么接”的建议。用简洁中文，分点不超过 6 条，不要编造。")
     try:
         out = llm.chat([{"role": "system", "content": sys_p},
-                        {"role": "user", "content": speech}], max_tokens=500, reasoning="low")
+                        {"role": "user", "content": speech}], max_tokens=700, reasoning="none")
     except Exception:
         return None
     out = (out or "").strip()
