@@ -321,7 +321,7 @@ class Brain:
         emo = None
         if st["emotion"]["enabled"]:
             try:
-                emo = emotion.update(self.store, inbound.peer_id, inbound.text, st, llm=self.llm)
+                emo = emotion.update(self.store, inbound.peer_id, inbound.text, st, llm=self.llm, scene=inbound.scene)
             except Exception:
                 emo = None
 
@@ -335,7 +335,9 @@ class Brain:
 
         messages = [{"role": "system", "content": self._sys()}]
         if emo:
-            messages.append({"role": "system", "content": emotion.prompt(emo)})
+            messages.append({"role": "system", "content": emotion.prompt(emo, scene=inbound.scene, settings=st)})
+        elif inbound.scene == "group":
+            messages.append({"role": "system", "content": "（这是群聊：你和对方只是普通朋友/群友，保持分寸礼貌，不要暧昧、撒娇过度或表达超出朋友的亲密。）"})
         if use_mem:
             try:
                 _sm = self.store.summary_get(inbound.peer_id)

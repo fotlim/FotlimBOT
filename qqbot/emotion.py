@@ -20,6 +20,21 @@ def _clamp(x, a, b):
     return max(a, min(b, x))
 
 
+DEFAULT_LEVELS = [[0, "陌生"], [20, "认识"], [40, "朋友"], [62, "好友"], [80, "挚友"]]
+
+
+def level_of(aff: float, settings) -> str:
+    levels = (settings.get("emotion", {}) or {}).get("affinity_levels") or DEFAULT_LEVELS
+    name = levels[0][1]
+    try:
+        for mn, nm in levels:
+            if aff >= float(mn):
+                name = nm
+    except Exception:
+        pass
+    return name
+
+
 def new_state(settings) -> dict:
     e = settings.get("emotion", {})
     return {"p": float(e.get("baseline_p", 0.6)), "a": float(e.get("baseline_a", 0.35)),
@@ -102,7 +117,7 @@ def derive_mood(st: dict):
     return label, intensity
 
 
-def update(store, peer_id: str, text: str, settings, llm=None) -> dict:
+def update(store, peer_id: str, text: str, settings, llm=None, scene: str = "private") -> dict:
     st = store.emotion_get_raw(peer_id) or new_state(settings)
     st = relax(st, settings)
     ap = appraise_llm(llm, text) if (settings["emotion"].get("use_llm") and llm is not None) else None
@@ -114,6 +129,9 @@ def update(store, peer_id: str, text: str, settings, llm=None) -> dict:
     st["a"] = _clamp(st["a"] + da, 0, 1)
     st["d"] = _clamp(st["d"] + dd, 0, 1)
     st["affinity"] = _clamp(st["affinity"] + daff, 0, 100)
+    if scene == "group":
+        cap = float(settings["emotion"].get("group_affinity_cap", 60))
+        st["affinity"] = min(st["affinity"], cap)
     evs = (st.get("events") or [])[-9:] + list(ev)
     st["events"] = evs
     st["energy"] = _clamp(st.get("energy", 80) - 1.5, 0, 100)
@@ -125,12 +143,20 @@ def update(store, peer_id: str, text: str, settings, llm=None) -> dict:
     return st
 
 
-def prompt(st: dict) -> str:
+def prompt(st: dict, scene: str = "private", settings=None) -> str:
+    settings = settings or {"emotion": {}}
     aff = st["affinity"]
-    tier = "很亲近" if aff >= 80 else ("亲近" if aff >= 62 else ("一般" if aff >= 40 else ("有点疏远" if aff >= 20 else "很冷淡")))
+    if scene == "group":
+        cap = float(settings.get("emotion", {}).get("group_affinity_cap", 60))
+        aff = min(aff, cap)
+    tier = level_of(aff, settings)
     energy = "充足" if st["energy"] > 60 else ("一般" if st["energy"] > 30 else "有点累")
+    extra = ""
+    if scene == "group":
+        extra = ("（注意：这是群聊，你和对方只是普通朋友/群友关系，必须保持分寸和礼貌，"
+                 "不要暧昧、不要撒娇过度、不要表达任何超出朋友的亲密或占有欲。）")
     return (f"（你此刻心情：{st['mood']}（强度 {st['intensity']}），精力{energy}；对对方好感度：{tier}。"
-            f"请让语气自然贴合当前情绪，但不要直接说出这些数值或设定。）")
+            f"请让语气自然贴合当前情绪，但不要直接说出这些数值或设定。{extra}）")
 
 
 def sticker_category(st: dict):
