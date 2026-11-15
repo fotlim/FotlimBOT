@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS memes(
 """
 
 DEFAULT_SETTINGS = {
-    "memory": {"enabled": True, "retrieve": 4, "use_facts": True, "use_profile": True},
+    "memory": {"enabled": True, "retrieve": 4, "use_facts": True, "use_profile": True, "use_summary": True},
     "vision": {"enabled": True},
     "emoji": {"enabled": True, "prob": 0.18},
     "voice": {"enabled": True, "voice": "zh-CN-XiaoxiaoNeural"},
@@ -382,3 +382,23 @@ class Store:
     def meme_count(self):
         with self._lock:
             return self.conn.execute("SELECT COUNT(*) FROM memes").fetchone()[0]
+
+    # ---- 长期记忆：滚动摘要 ----
+    def summary_get(self, peer_id: str):
+        v = self.kv_get("summary:" + peer_id)
+        if not v:
+            return None
+        try:
+            return json.loads(v)
+        except Exception:
+            return None
+
+    def summary_set(self, peer_id: str, summary: str, last_msg_id: int) -> None:
+        self.kv_set("summary:" + peer_id, json.dumps({"summary": summary, "last_msg_id": int(last_msg_id)}, ensure_ascii=False))
+
+    def messages_since(self, peer_id: str, after_id: int, limit: int = 80) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id,role,content FROM messages WHERE peer_id=? AND id>? ORDER BY id ASC LIMIT ?",
+                (peer_id, int(after_id), limit)).fetchall()
+        return [{"id": i, "role": r, "content": c} for i, r, c in rows]

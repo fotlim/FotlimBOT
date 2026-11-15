@@ -6,6 +6,7 @@ import glob
 import os
 import random
 import re
+import threading
 import urllib.request
 
 from .llm import LLMClient
@@ -127,6 +128,29 @@ class Brain:
             return ""
         facts = self.store.facts_for(peer_id)
         return ("（你记得关于对方的事实：\n" + "\n".join("- " + f["k"] + "：" + f["v"] for f in facts) + "）") if facts else ""
+
+    def _summarize_bg(self, peer_id: str) -> None:
+        try:
+            row = self.store.summary_get(peer_id)
+            lid = int(row.get("last_msg_id", 0)) if row else 0
+            msgs = self.store.messages_since(peer_id, lid, 80)
+            if len(msgs) <= 16:
+                return
+            to_sum = msgs[:-8]
+            if not to_sum:
+                return
+            convo = "\n".join(f"{m['role']}：{m['content']}" for m in to_sum)
+            prev = (row.get("summary", "") if row else "")
+            sys_p = ("把下面这段对话与已有摘要合并成一段简洁的长期记忆摘要（300字内）：保留关键事实、"
+                     "对方偏好与情绪、事件、承诺、关系变化；只输出摘要正文。")
+            content = ("【已有摘要】" + prev + "\n【新对话】\n" + convo) if prev else convo
+            new = self.llm.chat([{"role": "system", "content": sys_p}, {"role": "user", "content": content}],
+                                max_tokens=420, reasoning="none")
+            new = (new or "").strip()
+            if new:
+                self.store.summary_set(peer_id, new, int(to_sum[-1]["id"]))
+        except Exception:
+            pass
 
     def _stickers(self):
         if not self.sticker_dir:
@@ -253,6 +277,13 @@ class Brain:
         messages = [{"role": "system", "content": self._sys()}]
         if emo:
             messages.append({"role": "system", "content": emotion.prompt(emo)})
+        if use_mem:
+            try:
+                _sm = self.store.summary_get(inbound.peer_id)
+                if _sm and _sm.get("summary"):
+                    messages.append({"role": "system", "content": "（更早的对话摘要：" + _sm["summary"][:600] + "）"})
+            except Exception:
+                pass
         if web_ctx:
             messages.append({"role": "system", "content": web_ctx})
         if use_mem:
@@ -324,6 +355,11 @@ class Brain:
                 reply = reply.replace(w, "＊" * len(w))
         self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
                                sender_id="bot", sender_name="FotlimBOT", role="assistant", content=reply)
+        if st.get("memory", {}).get("use_summary", True):
+            try:
+                threading.Thread(target=self._summarize_bg, args=(inbound.peer_id,), daemon=True).start()
+            except Exception:
+                pass
         segs = [Segment.text(p) for p in split_bubbles(reply, bubble_len)]
         if emo and float(emo.get("energy", 80)) < 30:
             segs = segs[:1]
