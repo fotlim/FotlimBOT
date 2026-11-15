@@ -1,4 +1,4 @@
-"""核心大脑：决策 + 生成 + 媒体 + 事实 + 开关/名单。纯业务，读写 Store。"""
+"""核心大脑：决策 + 生成 + 媒体 + 事实 + 设置驱动。纯业务，读写 Store。"""
 from __future__ import annotations
 
 import base64
@@ -70,67 +70,59 @@ class Brain:
         self.sticker_dir = sticker_dir
 
     def _sys(self) -> str:
-        return (
-            self.persona
-            + "\n\n规则：像真人聊 QQ，短句口语，多用语气词；"
-            "不要 markdown、不要分点、不要自称 AI、不要长篇大论。"
-        )
+        return (self.persona + "\n\n规则：像真人聊 QQ，短句口语，多用语气词；"
+                "不要 markdown、不要分点、不要自称 AI、不要长篇大论。")
 
-    def _extract_facts(self, text: str, peer_id: str) -> None:
-        if not text or not self.store.flag("flag:memory", True):
+    def _extract_facts(self, text, peer_id):
+        s = self.store.get_settings()
+        if not text or not s["memory"]["enabled"]:
             return
         for pat, key in self._FACT_PATTERNS:
             m = re.search(pat, text)
-            if m:
-                val = (m.group(1) or "").strip()
-                if val:
-                    try:
-                        self.store.add_fact(peer_id, key, val, 0.75, "regex")
-                    except Exception:
-                        pass
+            if m and m.group(1).strip():
+                try:
+                    self.store.add_fact(peer_id, key, m.group(1).strip(), 0.75, "regex")
+                except Exception:
+                    pass
 
     def _record_user(self, inbound: Inbound) -> None:
         has_img = any(s.type == "image" for s in inbound.segments)
         has_voc = any(s.type == "voice" for s in inbound.segments)
         content = inbound.text or ("[图片]" if has_img else ("[语音]" if has_voc else "[消息]"))
-        self.store.add_message(
-            channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
-            sender_id=inbound.sender_id, sender_name=inbound.sender_name,
-            role="user", content=content, msg_id=inbound.message_id,
-            meta={"segments": [s.type for s in inbound.segments]},
-        )
+        self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
+                               sender_id=inbound.sender_id, sender_name=inbound.sender_name, role="user",
+                               content=content, msg_id=inbound.message_id,
+                               meta={"segments": [s.type for s in inbound.segments]})
         self._extract_facts(inbound.text, inbound.peer_id)
 
-    def _facts_block(self, peer_id: str) -> str:
-        if not self.store.flag("flag:memory", True):
+    def _facts_block(self, peer_id):
+        if not self.store.get_settings()["memory"]["enabled"]:
             return ""
         facts = self.store.facts_for(peer_id)
-        if not facts:
-            return ""
-        return "（你记得关于对方的事实：\n" + "\n".join("- " + f["k"] + "：" + f["v"] for f in facts) + "）"
+        return ("（你记得关于对方的事实：\n" + "\n".join("- " + f["k"] + "：" + f["v"] for f in facts) + "）") if facts else ""
 
-    def _stickers(self) -> list[str]:
+    def _stickers(self):
         if not self.sticker_dir:
             return []
         return sorted(glob.glob(self.sticker_dir + "/*.png") + glob.glob(self.sticker_dir + "/*.jpg"))
 
-    def _maybe_sticker_segment(self) -> Segment | None:
-        if not self.store.flag("flag:emoji", True):
+    def _maybe_sticker_segment(self):
+        s = self.store.get_settings()
+        if not s["emoji"]["enabled"]:
             return None
-        if self.emoji_prob <= 0 or random.random() >= self.emoji_prob:
+        prob = float(s["emoji"].get("prob", self.emoji_prob))
+        if prob <= 0 or random.random() >= prob:
             return None
         files = self._stickers()
         if not files:
             return None
         try:
             with open(random.choice(files), "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-            return Segment("image", {"file": "base64://" + b64})
+                return Segment("image", {"file": "base64://" + base64.b64encode(f.read()).decode()})
         except Exception:
             return None
 
-    def respond(self, inbound: Inbound, caps: Capabilities) -> Outbound | None:
-        # 名单拦截
+    def respond(self, inbound: Inbound, caps: Capabilities):
         black = self.store.kv_list_get("acl:black")
         white = self.store.kv_list_get("acl:white")
         if inbound.peer_id in black:
@@ -146,22 +138,24 @@ class Brain:
         if inbound.scene == "group" and not inbound.mentioned:
             return None
 
-        use_mem = self.store.flag("flag:memory", True)
-        use_vis = self.store.flag("flag:vision", True)
+        st = self.store.get_settings()
+        use_mem = st["memory"]["enabled"]
+        use_vis = st["vision"]["enabled"]
+        hist_n = int(st["reply"].get("history", 8))
+        max_tokens = int(st["reply"].get("max_tokens", 240))
+        reasoning = st["reply"].get("reasoning", "low")
+        bubble_len = int(st["reply"].get("bubble_len", 28))
+        retrieve = int(st["memory"].get("retrieve", 4))
 
         messages = [{"role": "system", "content": self._sys()}]
         fb = self._facts_block(inbound.peer_id)
         if fb:
             messages.append({"role": "system", "content": fb})
         if inbound.text and use_mem:
-            past = self.store.search(inbound.peer_id, inbound.text, limit=4)
+            past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
             if past:
-                messages.append({
-                    "role": "system",
-                    "content": "（你记得对方以前说过：\n" + "\n".join("- " + p for p in past)
-                               + "\n可以自然地提起，但别生硬。）",
-                })
-        messages += self.store.history(inbound.peer_id, 12)
+                messages.append({"role": "system", "content": "（你记得对方以前说过：\n" + "\n".join("- " + p for p in past) + "\n可以自然地提起，但别生硬。）"})
+        messages += self.store.history(inbound.peer_id, hist_n)
         if voices and not inbound.text:
             messages.append({"role": "system", "content": "（对方发来一条语音，你听不到内容，可以自然地请对方打字，或直接回应。）"})
 
@@ -169,40 +163,34 @@ class Brain:
         if images and caps.send_image and use_vis:
             b64 = _download_b64(images[0].data.get("url", ""))
             if b64 and messages and messages[-1]["role"] == "user":
-                messages[-1] = {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": inbound.text or "（看看这张图）"},
-                        {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}},
-                    ],
-                }
+                messages[-1] = {"role": "user", "content": [
+                    {"type": "text", "text": inbound.text or "（看看这张图）"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}
                 vision_used = True
 
         try:
-            reply = self.llm.chat(messages)
+            reply = self.llm.chat(messages, max_tokens=max_tokens, reasoning=reasoning)
         except Exception:
             if vision_used:
                 messages[-1] = {"role": "user", "content": (inbound.text or "[图片]") + "（对方发了张图）"}
                 try:
-                    reply = self.llm.chat(messages)
+                    reply = self.llm.chat(messages, max_tokens=max_tokens, reasoning=reasoning)
                 except Exception:
                     reply = "唔…刚刚走神了，你再说一遍嘛"
             else:
-                return Outbound(inbound.scene, inbound.peer_id,
-                                [Segment.text("（阿渔走神了…等一下下）")],
+                return Outbound(inbound.scene, inbound.peer_id, [Segment.text("（阿渔走神了…等一下下）")],
                                 reply_to=inbound.message_id or None)
 
-        self.store.add_message(
-            channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
-            sender_id="bot", sender_name="阿渔", role="assistant", content=reply,
-        )
-        segs = [Segment.text(p) for p in split_bubbles(reply)]
-        st = self._maybe_sticker_segment()
-        if st is not None:
-            segs.append(st)
+        self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
+                               sender_id="bot", sender_name="阿渔", role="assistant", content=reply)
+        segs = [Segment.text(p) for p in split_bubbles(reply, bubble_len)]
+        stk = self._maybe_sticker_segment()
+        if stk is not None:
+            segs.append(stk)
         return Outbound(inbound.scene, inbound.peer_id, segs, reply_to=inbound.message_id or None)
 
-    def generate_proactive(self, peer_id: str, scene: str, hint: str) -> Outbound:
+    def generate_proactive(self, peer_id, scene, hint):
+        st = self.store.get_settings()
         hist = self.store.history(peer_id, 6)
         ctx = "\n".join(f"- {m['role']}: {m['content']}" for m in hist) or "（还没有聊过）"
         fb = self._facts_block(peer_id)
@@ -212,15 +200,13 @@ class Brain:
             {"role": "user", "content": hint},
         ]
         try:
-            reply = self.llm.chat(messages, temperature=0.9, max_tokens=200)
+            reply = self.llm.chat(messages, temperature=0.9, max_tokens=200, reasoning=st["reply"].get("reasoning", "low"))
         except Exception:
             reply = "在吗…突然有点想问问你今天过得怎么样"
-        self.store.add_message(
-            channel="proactive", scene=scene, peer_id=peer_id,
-            sender_id="bot", sender_name="阿渔", role="assistant", content=reply,
-        )
-        segs = [Segment.text(p) for p in split_bubbles(reply)]
-        st = self._maybe_sticker_segment()
-        if st is not None:
-            segs.append(st)
+        self.store.add_message(channel="proactive", scene=scene, peer_id=peer_id,
+                               sender_id="bot", sender_name="阿渔", role="assistant", content=reply)
+        segs = [Segment.text(p) for p in split_bubbles(reply, int(st["reply"].get("bubble_len", 28)))]
+        stk = self._maybe_sticker_segment()
+        if stk is not None:
+            segs.append(stk)
         return Outbound(scene, peer_id, segs)

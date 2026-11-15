@@ -1,9 +1,10 @@
-"""OneBot v11 通道（类）：断线重连 + 供调度器主动 send。"""
+"""OneBot v11 通道（类）：断线重连 + 线程池并发处理 + 供调度器主动 send。"""
 from __future__ import annotations
 
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import websocket  # websocket-client
 
@@ -37,12 +38,9 @@ def _to_inbound(ev: dict) -> Inbound | None:
         elif t == "record":
             segs.append(Segment("voice", {"file": d.get("file", "")}))
     sender = ev.get("sender") or {}
-    return Inbound(
-        channel="onebot11", scene=scene, peer_id=peer,
-        sender_id=str(ev.get("user_id", "")),
-        sender_name=sender.get("card") or sender.get("nickname") or "",
-        segments=segs, message_id=str(ev.get("message_id", "")), ts=time.time(), raw=ev,
-    )
+    return Inbound(channel="onebot11", scene=scene, peer_id=peer, sender_id=str(ev.get("user_id", "")),
+                   sender_name=sender.get("card") or sender.get("nickname") or "", segments=segs,
+                   message_id=str(ev.get("message_id", "")), ts=time.time(), raw=ev)
 
 
 def _build_message(out: Outbound) -> list[dict]:
@@ -68,6 +66,7 @@ class OneBot11Channel:
         self.ws = None
         self.connected = False
         self._send_lock = threading.Lock()
+        self._pool = ThreadPoolExecutor(max_workers=6)
 
     def send(self, out: Outbound) -> bool:
         msg = _build_message(out)
@@ -86,13 +85,21 @@ class OneBot11Channel:
             except Exception:
                 return False
 
+    def _handle(self, inbound: Inbound, brain: Brain) -> None:
+        try:
+            out = brain.respond(inbound, CAPS)
+            if out is not None and self.send(out):
+                log_print(f"[onebot11] replied {inbound.scene}:{inbound.peer_id}")
+        except Exception as e:
+            log_print(f"[onebot11] handle err {e!r}")
+
     def run(self, brain: Brain) -> None:
-        print(f"[onebot11] connecting {self.ws_url}", flush=True)
+        log_print(f"[onebot11] connecting {self.ws_url}")
         while True:
             try:
                 self.ws = websocket.create_connection(self.ws_url, timeout=30, max_size=None)
                 self.connected = True
-                print("[onebot11] connected", flush=True)
+                log_print("[onebot11] connected")
                 while True:
                     raw = self.ws.recv()
                     if not raw:
@@ -106,15 +113,20 @@ class OneBot11Channel:
                     inbound = _to_inbound(ev)
                     if inbound is None:
                         continue
-                    out = brain.respond(inbound, CAPS)
-                    if out is not None and self.send(out):
-                        print(f"[onebot11] replied {inbound.scene}:{inbound.peer_id}", flush=True)
+                    self._pool.submit(self._handle, inbound, brain)  # 不阻塞收包
             except Exception as e:
                 self.connected = False
-                print(f"[onebot11] disconnected: {e!r}; retry 3s", flush=True)
+                log_print(f"[onebot11] disconnected: {e!r}; retry 3s")
                 try:
                     if self.ws:
                         self.ws.close()
                 except Exception:
                     pass
                 time.sleep(3)
+
+
+def log_print(msg: str) -> None:
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
