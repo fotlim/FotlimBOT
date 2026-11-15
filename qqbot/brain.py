@@ -262,9 +262,9 @@ class Brain:
                     self._record_user(inbound)
                     return _oc
                 try:
-                    from . import tools_router as trouter
+                    from . import tools_router as trouter, agent as agentmod
                     if trouter.looks_like_task(inbound.text):
-                        _tr = trouter.route(inbound, self)
+                        _tr = agentmod.run(inbound, self)
                         if _tr is not None:
                             self._record_user(inbound)
                             return _tr
