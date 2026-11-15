@@ -261,6 +261,15 @@ class Brain:
                 if _oc is not None:
                     self._record_user(inbound)
                     return _oc
+                try:
+                    from . import tools_router as trouter
+                    if trouter.looks_like_task(inbound.text):
+                        _tr = trouter.route(inbound, self)
+                        if _tr is not None:
+                            self._record_user(inbound)
+                            return _tr
+                except Exception:
+                    pass
         except Exception:
             pass
         black = self.store.kv_list_get("acl:black")

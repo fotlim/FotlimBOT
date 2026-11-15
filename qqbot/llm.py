@@ -41,3 +41,24 @@ class LLMClient:
             except Exception:
                 pass
             raise RuntimeError(f"LLM HTTP {e.code}: {detail}") from e
+
+    def chat_tools(self, messages, tools, tool_choice="auto", temperature: float = 0.2,
+                   max_tokens: int = 240, reasoning: str | None = None) -> dict:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "tools": tools,
+            "tool_choice": tool_choice,
+        }
+        if reasoning:
+            payload["reasoning_effort"] = reasoning
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.base.rstrip("/") + "/chat/completions", data=body,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.key}"},
+        )
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            d: Any = json.load(r)
+        return d["choices"][0]["message"]
