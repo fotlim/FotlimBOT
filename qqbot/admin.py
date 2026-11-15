@@ -162,7 +162,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   </section>
 
   <section id="tab-logs" class="page">
-    <div class="card"><h3>运行日志 <button class="act gray" style="margin-left:auto" onclick="loadLogs()">刷新</button></h3><div id="logbox" class="logbox"></div></div>
+    <div class="card"><h3>运行日志 <span class="mini" style="margin-left:12px">字号</span> <input id="logSize" type="range" min="10" max="22" step="1" value="13" oninput="setLogSize(this.value)" style="width:140px;vertical-align:middle"> <button class="act gray" style="margin-left:auto" onclick="loadLogs()">刷新</button></h3><div id="logbox" class="logbox"></div></div>
   </section>
 
   <section id="tab-settings" class="page">
@@ -250,7 +250,8 @@ async function loadModules(){_s=await api('/api/settings_full');let h='';for(con
 async function saveSettingsFull(){const patch={};for(const sec in MSCHEMA){patch[sec]={};for(const fld of MSCHEMA[sec].f){const k=fld[0],ty=fld[1];const el=document.getElementById('set_'+sec+'_'+k);patch[sec][k]=ty==='bool'?el.checked:(ty==='num'?parseFloat(el.value):el.value);}}const r=await api('/api/settings_full',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});document.getElementById('modRet').textContent=r.ok?'已保存并生效':'保存失败'}
 async function loadAcl(){const a=await api('/api/acl');document.getElementById('white').value=(a.white||[]).join('\n');document.getElementById('black').value=(a.black||[]).join('\n')}
 async function saveAcl(){const white=document.getElementById('white').value.split('\n').map(s=>s.trim()).filter(Boolean),black=document.getElementById('black').value.split('\n').map(s=>s.trim()).filter(Boolean);const r=await api('/api/acl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({white,black})});document.getElementById('aclRet').textContent='已保存 白'+r.white+'/黑'+r.black}
-async function loadLogs(){const l=await api('/api/logs');const box=document.getElementById('logbox');box.textContent=(l.lines||[]).join('\n');box.scrollTop=box.scrollHeight}
+async function loadLogs(){const l=await api('/api/logs');const box=document.getElementById('logbox');const sz=localStorage.getItem('logSize')||'13';box.style.fontSize=sz+'px';const rng=document.getElementById('logSize');if(rng)rng.value=sz;box.textContent=(l.lines||[]).join('\n');box.scrollTop=box.scrollHeight}
+function setLogSize(v){localStorage.setItem('logSize',String(v));document.getElementById('logbox').style.fontSize=v+'px'}
 async function loadEmotions(){const e=await api('/api/emotions');document.getElementById('emoRows').innerHTML=(e.emotions||[]).map(x=>'<tr><td>'+x.peer_id+'</td><td><span class=tag>'+x.mood+'</span></td><td>'+x.affinity+'</td><td>'+x.p+'</td><td>'+x.a+'</td><td>'+x.d+'</td><td>'+x.energy+'</td><td><button class="act lock" onclick="document.getElementById(\'ePeer\').value=\''+x.peer_id+'\';document.getElementById(\'eAff\').value=\''+x.affinity+'\'">选中</button></td></tr>').join('')||'<tr><td colspan=8 class=dim>暂无情绪记录（聊两句就有了）</td></tr>'}
 async function setEmotion(){const peer=document.getElementById('ePeer').value,mood=document.getElementById('eMood').value,aff=document.getElementById('eAff').value;if(!peer)return;const body={peer};if(mood)body.mood=mood;if(aff!=='')body.affinity=parseFloat(aff);const r=await api('/api/emotion/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});document.getElementById('eRet').textContent=r.ok?'已更新':'失败';loadEmotions()}
 async function loadCaps(){try{const r=await api('/api/cap/whoami');if(r&&r.nickname)document.getElementById('curNick').textContent=r.nickname}catch(e){}}
