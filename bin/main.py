@@ -1,39 +1,57 @@
 #!/usr/bin/env python3
-"""入口：按配置装配通道 + 大脑，跑起来。"""
+"""入口：装配 存储 + 大脑 + 通道 + 调度 + 管理面板。"""
 from __future__ import annotations
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from qqbot import config as cfgmod
 from qqbot import persona as persona_mod
+from qqbot.admin import Admin
 from qqbot.brain import Brain
 from qqbot.llm import LLMClient
+from qqbot.scheduler import Scheduler
+from qqbot.store import Store
+
+
+class _NullChannel:
+    name = "mock"
+    connected = False
+
+    def send(self, out):
+        return False
 
 
 def main() -> int:
     cfg = cfgmod.load()
-    print(f"[boot] channel={cfg.channel} model={cfg.llm_model} base={cfg.llm_base}", flush=True)
-    brain = Brain(
-        llm=LLMClient(cfg.llm_base, cfg.llm_key, cfg.llm_model),
-        persona=persona_mod.load(cfg.persona_file),
-    )
+    print(f"[boot] channel={cfg.channel} model={cfg.llm_model} base={cfg.llm_base} proactive={cfg.proactive} emoji_prob={cfg.emoji_prob}", flush=True)
+    store = Store(os.path.join(cfg.data_dir, "qqbot.db"))
+    brain = Brain(llm=LLMClient(cfg.llm_base, cfg.llm_key, cfg.llm_model),
+                  persona=persona_mod.load(cfg.persona_file), store=store,
+                  emoji_prob=cfg.emoji_prob, sticker_dir=cfg.sticker_dir)
 
     if cfg.channel == "mock":
         from qqbot.channels.mock import run_demo
+        try:
+            Admin(cfg.admin_host, cfg.admin_port, cfg.admin_token, store, _NullChannel(), brain,
+                  time.time(), sticker_dir=cfg.sticker_dir).start()
+        except Exception as e:
+            print("[admin] skip:", repr(e), flush=True)
         run_demo(brain)
+        time.sleep(3600)
         return 0
 
     if cfg.channel == "onebot11":
-        from qqbot.channels.onebot11 import run
-        run(brain, cfg.onebot_ws)
+        from qqbot.channels.onebot11 import OneBot11Channel
+        ch = OneBot11Channel(cfg.onebot_ws)
+        Admin(cfg.admin_host, cfg.admin_port, cfg.admin_token, store, ch, brain,
+              time.time(), sticker_dir=cfg.sticker_dir).start()
+        Scheduler(brain, ch, store, cfg).start()
+        ch.run(brain)
         return 0
-
-    if cfg.channel == "milky":
-        print("[boot] milky 通道尚未接入（可用 onebot11 先跑）", flush=True)
-        return 2
 
     print(f"[boot] 未知 CHANNEL={cfg.channel}")
     return 2
