@@ -7,18 +7,25 @@ import re
 
 from .types import Outbound, Segment
 
-HELP = ("我可以听你的指令：\n"
-        "· 换头像 / 换头像 <图片URL>\n"
-        "· 改昵称 <名字>\n"
-        "· 改签名 <内容>\n"
-        "· 群名片改名 <内容>（在群里发）\n"
-        "· 发说说：<内容>\n"
-        "· 去QQ空间点赞\n"
-        "· 发个表情 [关键词]\n"
-        "· 搜一下 <关键词>\n"
-        "· 找图 <关键词>\n"
-        "· 换音色 <关键词>\n"
+HELP = ("我可以听你的指令（仅主人）：\n"
+        "· 换头像 / 换头像 <图片URL>\n· 改昵称 <名字>\n· 改签名 <内容>\n· 群名片改名 <内容>（群）\n"
+        "· 发说说：<内容>\n· 去QQ空间点赞\n· 发个表情 [关键词]\n· 搜一下 <关键词>\n· 找图 <关键词>\n· 换音色 <关键词>\n"
+        "· 禁言 @人 [分钟] / 解禁 @人 / 全体禁言 / 解除全体禁言\n· 踢 @人\n· 戳一戳 @人\n· 撤回（回复那条消息）\n"
+        "· 群公告 <内容> / 群名改成 <名字> / 头衔 @人 <内容>\n· 点赞 @人 / 赞我\n· 私聊 <QQ号> <内容>\n"
         "· 状态 / 看好感 / 清空对话")
+
+
+def _ok(r) -> bool:
+    return bool(r and r.get("status") == "ok")
+
+
+def _at_uid(inbound):
+    for s in inbound.segments:
+        if s.type == "at":
+            u = str(s.data.get("uid", ""))
+            if u and u != "all":
+                return u
+    return None
 
 
 def is_owner(store, inbound) -> bool:
@@ -154,6 +161,79 @@ def handle(inbound, brain):
         if not row:
             return _rep(inbound, ["还没什么好感记录，多聊几句吧～"])
         return _rep(inbound, [f"我对你的好感度 {row['affinity']}/100，心情 {row['mood']}，精力 {row['energy']}"])
+
+    # ---- QQ 控制类（仅主人；需有权限才会成功）----
+    if inbound.scene == "group":
+        if re.match(r"^全体禁言$", t):
+            r = actions.set_group_whole_ban(ch, inbound.peer_id, True)
+            return _rep(inbound, ["已开启全体禁言" if _ok(r) else "操作失败（可能需要管理员）"])
+        if re.match(r"^(解除|关闭)全体禁言$", t):
+            r = actions.set_group_whole_ban(ch, inbound.peer_id, False)
+            return _rep(inbound, ["已解除全体禁言" if _ok(r) else "操作失败"])
+        if t.startswith("禁言"):
+            uid = _at_uid(inbound)
+            if not uid:
+                return _rep(inbound, ["要 @ 一个人才能禁言哦"])
+            mm = re.search(r"(\d+)\s*(分钟|秒|min|s)?", re.sub(r"@\S+|\d{5,}", "", t))
+            val = int(mm.group(1)) if mm else 10
+            unit = (mm.group(2) if mm else "分钟") or "分钟"
+            sec = val if unit in ("秒", "s") else val * 60
+            r = actions.set_group_ban(ch, inbound.peer_id, uid, sec)
+            return _rep(inbound, ["已禁言 %d 秒" % sec if _ok(r) else "禁言失败（需要管理员）"])
+        if t.startswith("解禁"):
+            uid = _at_uid(inbound)
+            if not uid:
+                return _rep(inbound, ["要 @ 一个人"])
+            r = actions.set_group_ban(ch, inbound.peer_id, uid, 0)
+            return _rep(inbound, ["已解禁" if _ok(r) else "解禁失败"])
+        if t.startswith("踢"):
+            uid = _at_uid(inbound)
+            if not uid:
+                return _rep(inbound, ["要 @ 一个人才能踢"])
+            r = actions.set_group_kick(ch, inbound.peer_id, uid)
+            return _rep(inbound, ["已踢出" if _ok(r) else "踢出失败（需要管理员）"])
+        if t.startswith("头衔"):
+            uid = _at_uid(inbound)
+            if not uid:
+                return _rep(inbound, ["要 @ 一个人"])
+            title = re.sub(r"@\S+", "", t).replace("头衔", "").strip() or "常驻"
+            r = actions.set_group_special_title(ch, inbound.peer_id, uid, title)
+            return _rep(inbound, ["头衔请求已发送" if _ok(r) else "设置失败（需要群主）"])
+        m = re.match(r"^(?:群公告|发公告)\s*[:：]?\s*(.+)$", t)
+        if m:
+            r = actions.send_group_notice(ch, inbound.peer_id, m.group(1).strip())
+            return _rep(inbound, ["群公告已发" if _ok(r) else "发公告失败（需要管理员）"])
+        m = re.match(r"^群名改成\s*[:：]?\s*(.+)$", t)
+        if m:
+            r = actions.set_group_name(ch, inbound.peer_id, m.group(1).strip()[:30])
+            return _rep(inbound, ["群名改好啦" if _ok(r) else "改群名失败（需要群主）"])
+        if re.match(r"^(撤回|撤一下)", t):
+            mid = None
+            raw = getattr(inbound, "raw", None) or {}
+            for mm2 in raw.get("message", []) or []:
+                if mm2.get("type") == "reply":
+                    mid = (mm2.get("data") or {}).get("id")
+            if not mid:
+                return _rep(inbound, ["回复要撤回的那条消息再说「撤回」"])
+            r = actions.delete_msg(ch, mid)
+            return _rep(inbound, ["撤回啦" if _ok(r) else "撤回失败（需要管理员/已超时）"])
+
+    if t.startswith("戳一戳") or t == "戳":
+        uid = _at_uid(inbound) or (inbound.peer_id if inbound.scene == "private" else None)
+        if not uid:
+            return _rep(inbound, ["要 @ 一个人"])
+        r = actions.send_poke(ch, uid, inbound.peer_id if inbound.scene == "group" else None)
+        return _rep(inbound, ["戳啦～"])
+
+    if t.startswith("点赞") or t == "赞我":
+        uid = _at_uid(inbound) or str(inbound.sender_id)
+        r = actions.send_like(ch, uid, 10)
+        return _rep(inbound, ["点赞啦" if _ok(r) else "点赞失败"])
+
+    m = re.match(r"^(?:私聊|发消息)\s*(\d{5,12})\s+([\s\S]+)$", t)
+    if m:
+        r = actions.send_private_msg(ch, m.group(1), m.group(2).strip())
+        return _rep(inbound, ["已私聊发送" if _ok(r) else "发送失败"])
 
     if re.match(r"^(清空对话|清空记忆|忘掉之前)", t):
         store.clear_peer(inbound.peer_id)

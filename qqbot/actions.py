@@ -37,6 +37,50 @@ def set_group_card(channel, group_id, user_id, card: str):
     return _r(channel, "set_group_card", {"group_id": int(group_id), "user_id": int(user_id), "card": card})
 
 
+def set_group_ban(channel, group_id, user_id, duration: int):
+    return _r(channel, "set_group_ban", {"group_id": int(group_id), "user_id": int(user_id), "duration": int(duration)})
+
+
+def set_group_whole_ban(channel, group_id, enable: bool):
+    return _r(channel, "set_group_whole_ban", {"group_id": int(group_id), "enable": bool(enable)})
+
+
+def set_group_kick(channel, group_id, user_id, reject_add: bool = False):
+    return _r(channel, "set_group_kick", {"group_id": int(group_id), "user_id": int(user_id), "reject_add_request": bool(reject_add)})
+
+
+def delete_msg(channel, message_id):
+    return _r(channel, "delete_msg", {"message_id": int(message_id)})
+
+
+def send_group_notice(channel, group_id, content: str):
+    return _r(channel, "_send_group_notice", {"group_id": int(group_id), "content": content})
+
+
+def set_group_name(channel, group_id, name: str):
+    return _r(channel, "set_group_name", {"group_id": int(group_id), "group_name": name})
+
+
+def set_group_special_title(channel, group_id, user_id, title: str):
+    return _r(channel, "set_group_special_title", {"group_id": int(group_id), "user_id": int(user_id), "special_title": title})
+
+
+def send_like(channel, user_id, times: int = 10):
+    return _r(channel, "send_like", {"user_id": int(user_id), "times": int(times)})
+
+
+def send_poke(channel, user_id, group_id=None):
+    p = {"user_id": int(user_id)}
+    if group_id:
+        p["group_id"] = int(group_id)
+    return _r(channel, "send_poke", p)
+
+
+def send_private_msg(channel, user_id, text: str):
+    return _r(channel, "send_msg", {"message_type": "private", "user_id": int(user_id),
+                                    "message": [{"type": "text", "data": {"text": text}}]})
+
+
 def qzone_publish(channel, content: str, images=None):
     p = {"content": content}
     if images:
