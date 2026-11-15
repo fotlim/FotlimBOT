@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS actions(
 class Store:
     def __init__(self, path: str):
         d = os.path.dirname(path)
+        self.path = path
         if d:
             os.makedirs(d, exist_ok=True)
         self._lock = threading.Lock()
@@ -198,3 +199,73 @@ class Store:
                 "SELECT ts,kind,peer_id,detail FROM actions ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [{"ts": t, "kind": k, "peer": p, "detail": d} for t, k, p, d in rows]
+
+    # ---- 统计 / 管理 / 备份 ----
+    def stats_by_day(self, days: int = 7) -> list[dict]:
+        now = int(time.time() // 86400) * 86400
+        out = []
+        with self._lock:
+            for i in range(days - 1, -1, -1):
+                start = now - i * 86400
+                end = start + 86400
+                c = self.conn.execute(
+                    "SELECT COUNT(*) FROM messages WHERE ts>=? AND ts<?", (start, end)
+                ).fetchone()[0]
+                out.append({"day": time.strftime("%m-%d", time.localtime(start)), "count": c})
+        return out
+
+    def scene_stats(self) -> dict:
+        with self._lock:
+            rows = self.conn.execute("SELECT scene,COUNT(*) FROM messages GROUP BY scene").fetchall()
+        return {s: c for s, c in rows}
+
+    def kv_list_get(self, k: str) -> list:
+        v = self.kv_get(k)
+        if not v:
+            return []
+        try:
+            return json.loads(v)
+        except Exception:
+            return []
+
+    def kv_list_set(self, k: str, arr: list) -> None:
+        self.kv_set(k, json.dumps(arr, ensure_ascii=False))
+
+    def flag(self, k: str, default: bool = True) -> bool:
+        v = self.kv_get(k)
+        if v is None:
+            return default
+        return str(v).lower() in ("1", "true", "yes", "on")
+
+    def flag_set(self, k: str, v: bool) -> None:
+        self.kv_set(k, "1" if v else "0")
+
+    def delete_peer(self, peer: str) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM messages WHERE peer_id=?", (peer,))
+            self.conn.commit()
+
+    def backup(self, backup_dir: str) -> str:
+        import sqlite3 as _s
+        os.makedirs(backup_dir, exist_ok=True)
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        dst = os.path.join(backup_dir, f"qqbot-{ts}.db")
+        with self._lock:
+            try:
+                self.conn.execute("PRAGMA wal_checkpoint(FULL)")
+            except Exception:
+                pass
+            dest = _s.connect(dst)
+            self.conn.backup(dest)
+            dest.close()
+        return dst
+
+    def list_backups(self, backup_dir: str) -> list[dict]:
+        import glob as _g
+        rows = []
+        for p in sorted(_g.glob(os.path.join(backup_dir, "qqbot-*.db")), reverse=True)[:50]:
+            try:
+                rows.append({"name": os.path.basename(p), "size_kb": int(os.path.getsize(p) / 1024)})
+            except Exception:
+                pass
+        return rows

@@ -1,4 +1,4 @@
-"""核心大脑：决策 + 生成 + 媒体（看图/发图/语音）+ 事实抽取。纯业务，读写 Store。"""
+"""核心大脑：决策 + 生成 + 媒体 + 事实 + 开关/名单。纯业务，读写 Store。"""
 from __future__ import annotations
 
 import base64
@@ -77,7 +77,7 @@ class Brain:
         )
 
     def _extract_facts(self, text: str, peer_id: str) -> None:
-        if not text:
+        if not text or not self.store.flag("flag:memory", True):
             return
         for pat, key in self._FACT_PATTERNS:
             m = re.search(pat, text)
@@ -102,6 +102,8 @@ class Brain:
         self._extract_facts(inbound.text, inbound.peer_id)
 
     def _facts_block(self, peer_id: str) -> str:
+        if not self.store.flag("flag:memory", True):
+            return ""
         facts = self.store.facts_for(peer_id)
         if not facts:
             return ""
@@ -113,6 +115,8 @@ class Brain:
         return sorted(glob.glob(self.sticker_dir + "/*.png") + glob.glob(self.sticker_dir + "/*.jpg"))
 
     def _maybe_sticker_segment(self) -> Segment | None:
+        if not self.store.flag("flag:emoji", True):
+            return None
         if self.emoji_prob <= 0 or random.random() >= self.emoji_prob:
             return None
         files = self._stickers()
@@ -126,6 +130,14 @@ class Brain:
             return None
 
     def respond(self, inbound: Inbound, caps: Capabilities) -> Outbound | None:
+        # 名单拦截
+        black = self.store.kv_list_get("acl:black")
+        white = self.store.kv_list_get("acl:white")
+        if inbound.peer_id in black:
+            return None
+        if white and inbound.peer_id not in white:
+            return None
+
         images = [s for s in inbound.segments if s.type == "image"]
         voices = [s for s in inbound.segments if s.type == "voice"]
         if not inbound.text and not images and not voices:
@@ -134,11 +146,14 @@ class Brain:
         if inbound.scene == "group" and not inbound.mentioned:
             return None
 
+        use_mem = self.store.flag("flag:memory", True)
+        use_vis = self.store.flag("flag:vision", True)
+
         messages = [{"role": "system", "content": self._sys()}]
         fb = self._facts_block(inbound.peer_id)
         if fb:
             messages.append({"role": "system", "content": fb})
-        if inbound.text:
+        if inbound.text and use_mem:
             past = self.store.search(inbound.peer_id, inbound.text, limit=4)
             if past:
                 messages.append({
@@ -151,7 +166,7 @@ class Brain:
             messages.append({"role": "system", "content": "（对方发来一条语音，你听不到内容，可以自然地请对方打字，或直接回应。）"})
 
         vision_used = False
-        if images and caps.send_image:
+        if images and caps.send_image and use_vis:
             b64 = _download_b64(images[0].data.get("url", ""))
             if b64 and messages and messages[-1]["role"] == "user":
                 messages[-1] = {

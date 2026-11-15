@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from qqbot import config as cfgmod
 from qqbot import persona as persona_mod
+from qqbot import logbus
 from qqbot.admin import Admin
 from qqbot.brain import Brain
 from qqbot.llm import LLMClient
@@ -26,6 +27,7 @@ class _NullChannel:
 
 
 def main() -> int:
+    logbus.install()
     cfg = cfgmod.load()
     print(f"[boot] channel={cfg.channel} model={cfg.llm_model} base={cfg.llm_base} proactive={cfg.proactive} emoji_prob={cfg.emoji_prob}", flush=True)
     store = Store(os.path.join(cfg.data_dir, "qqbot.db"))
