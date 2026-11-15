@@ -24,7 +24,13 @@ DEFAULT_LEVELS = [[0, "陌生"], [20, "认识"], [40, "朋友"], [62, "好友"],
 
 
 def level_of(aff: float, settings) -> str:
-    levels = (settings.get("emotion", {}) or {}).get("affinity_levels") or DEFAULT_LEVELS
+    e = settings.get("emotion", {}) or {}
+    if all(k in e for k in ("lv_acquaint", "lv_friend", "lv_close", "lv_best")):
+        levels = [[0, "陌生"], [float(e["lv_acquaint"]), "认识"], [float(e["lv_friend"]), "朋友"],
+                  [float(e["lv_close"]), "好友"], [float(e["lv_best"]), "挚友"]]
+    else:
+        levels = e.get("affinity_levels") or DEFAULT_LEVELS
+    levels = sorted(levels, key=lambda x: float(x[0]))
     name = levels[0][1]
     try:
         for mn, nm in levels:

@@ -47,6 +47,7 @@ DEFAULT_SETTINGS = {
     "emotion": {"enabled": True, "use_llm": False, "decay_per_hour": 3.0,
                 "baseline_affinity": 50.0, "baseline_p": 0.6, "baseline_a": 0.35, "baseline_d": 0.6,
                 "group_affinity_cap": 60,
+                "lv_acquaint": 20, "lv_friend": 40, "lv_close": 62, "lv_best": 80,
                 "affinity_levels": [[0, "陌生"], [20, "认识"], [40, "朋友"], [62, "好友"], [80, "挚友"]]},
     "moderation": {"enabled": True, "words": "傻逼,操你,去死,滚蛋,妈的,煞笔,贱", "action": "skip"},
     "autonomy": {"enabled": True, "allow_like": True, "allow_qzone_post": False,
