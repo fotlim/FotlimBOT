@@ -143,6 +143,24 @@ class Brain:
         except Exception:
             return None
 
+    def _web_intent(self, text):
+        t = (text or "").strip()
+        if not t:
+            return (None, None)
+        m = re.match(r"^[#＃]\s*(搜|查|图|找图)\s+(.+)$", t)
+        if m:
+            return ("image" if "图" in m.group(1) else "search", m.group(2).strip())
+        q = re.sub(r"^(帮我|麻烦|请)?(搜一下|搜搜|搜|查一下|查查|帮我查|找一下|找找|给我找|来点|给我)\s*", "", t)
+        q = re.sub(r"[。！？!?~…]+$", "", q).strip() or t
+        img_kw = ["图片", "照片", "壁纸", "表情包", "素材", "头像", "海报", "找图", "美图"]
+        want_img = any(k in t for k in img_kw) and any(k in t for k in ["找", "搜", "来", "要", "给我"])
+        want_search = any(k in t for k in ["搜", "查一下", "查查", "帮我查"])
+        if want_img:
+            return ("image", q)
+        if want_search:
+            return ("search", q)
+        return (None, None)
+
     def respond(self, inbound: Inbound, caps: Capabilities):
         black = self.store.kv_list_get("acl:black")
         white = self.store.kv_list_get("acl:white")
@@ -169,6 +187,35 @@ class Brain:
 
         st = self.store.get_settings()
 
+        # 联网（找信息/找图）
+        web_ctx = None
+        wc = st.get("web", {})
+        if wc.get("enabled") and inbound.text:
+            kind, wq = self._web_intent(inbound.text)
+            if kind == "image" and wc.get("allow_image", True):
+                try:
+                    from . import web as webmod
+                    urls = webmod.image_search(wq, 4)
+                    b64 = webmod.fetch_b64(urls[0]) if urls else None
+                    if b64:
+                        self.store.log_action("web_image", inbound.peer_id, wq)
+                        return Outbound(inbound.scene, inbound.peer_id,
+                                        [Segment.text("喏，给你找的「%s」～" % wq),
+                                         Segment("image", {"file": "base64://" + b64})],
+                                        reply_to=inbound.message_id or None)
+                except Exception:
+                    pass
+            elif kind == "search":
+                try:
+                    from . import web as webmod
+                    rs = webmod.search(wq, int(wc.get("max_results", 5)))
+                    if rs:
+                        self.store.log_action("web_search", inbound.peer_id, wq)
+                        web_ctx = ("（联网检索结果，供参考，自然融入回答、不要照抄网址：\n"
+                                   + "\n".join("- " + r["title"] + "：" + r["snippet"] for r in rs) + "）")
+                except Exception:
+                    pass
+
         # 情绪更新
         emo = None
         if st["emotion"]["enabled"]:
@@ -191,6 +238,8 @@ class Brain:
         fb = self._facts_block(inbound.peer_id)
         if fb:
             messages.append({"role": "system", "content": fb})
+        if web_ctx:
+            messages.append({"role": "system", "content": web_ctx})
         if inbound.text and use_mem:
             past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
             if past:

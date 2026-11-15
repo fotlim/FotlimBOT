@@ -17,6 +17,7 @@ from . import voice
 from . import logbus
 from . import emotion
 from . import actions
+from . import web as webmod
 
 
 _HTML = r'''<!doctype html><html lang="zh"><head><meta charset="utf-8">
@@ -188,6 +189,10 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
       <div class="toolbar"><button class="act gray" onclick="loadFeeds()">拉取好友动态</button><span class="mini">点「赞」给好友说说点赞</span></div>
       <table><thead><tr><th>昵称</th><th>内容</th><th>tid</th><th>操作</th></tr></thead><tbody id="feedRows"></tbody></table>
     </div>
+    <div class="card"><h3>④ 联网检索（Bing）</h3>
+      <div class="toolbar">关键词 <input id="webQ" size="28" placeholder="如：北京天气 / 可爱猫咪"><button class="act" onclick="webSearch()">搜网页</button><button class="act gray" onclick="webImage()">找图</button> <span id="webRet" class="r"></span></div>
+      <div id="webResults" class="mini"></div>
+    </div>
   </section>
 </main></div>
 
@@ -213,7 +218,7 @@ async function loadFacts(){const f=await api('/api/facts');document.getElementBy
 async function addFact(){const peer=document.getElementById('fPeer').value,k=document.getElementById('fK').value,v=document.getElementById('fV').value;if(!peer||!k||!v)return;await api('/api/facts/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer,k,v})});loadFacts()}
 async function delFact(id){await api('/api/facts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadFacts()}
 async function lockFact(id,l){await api('/api/facts/lock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,locked:l})});loadFacts()}
-const MSCHEMA={memory:{t:'长期记忆',f:[['enabled','bool','启用'],['retrieve','num','检索条数']]},vision:{t:'看图（视觉）',f:[['enabled','bool','启用']]},emoji:{t:'自动表情',f:[['enabled','bool','启用'],['prob','num','概率0-1']]},voice:{t:'语音TTS',f:[['enabled','bool','启用'],['voice','text','音色']]},proactive:{t:'主动发言',f:[['enabled','bool','启用'],['quiet_start','text','静默开始'],['quiet_end','text','静默结束'],['min_idle_h','num','最小空闲h']]},reply:{t:'回复',f:[['max_tokens','num','最大tokens'],['history','num','上下文条数'],['reasoning','sel:none low medium high','推理强度'],['bubble_len','num','每句字数']]},rate:{t:'频率',f:[['qpm','num','每分钟上限']]},emotion:{t:'情绪/好感',f:[['enabled','bool','启用'],['use_llm','bool','LLM评估(慢)'],['decay_per_hour','num','每小时衰减'],['baseline_affinity','num','初始好感']]},moderation:{t:'屏蔽词',f:[['enabled','bool','启用'],['words','text','词库(逗号分隔)'],['action','sel:skip mask','命中处理']]},autonomy:{t:'自主行为',f:[['enabled','bool','启用'],['allow_like','bool','自主点赞'],['allow_qzone_post','bool','自主发说说'],['allow_nickname','bool','自主改昵称'],['min_interval_hours','num','最短间隔(小时)'],['allow_avatar','bool','自主换头像(未启用)']]},humanize:{t:'拟人化(分条/延迟)',f:[['enabled','bool','启用'],['read_min_ms','num','读延迟下限ms'],['read_max_ms','num','读延迟上限ms'],['per_char_ms','num','每字ms'],['bubble_gap_min_ms','num','气泡间隔下限ms'],['bubble_gap_max_ms','num','气泡间隔上限ms']]}};
+const MSCHEMA={memory:{t:'长期记忆',f:[['enabled','bool','启用'],['retrieve','num','检索条数']]},vision:{t:'看图（视觉）',f:[['enabled','bool','启用']]},emoji:{t:'自动表情',f:[['enabled','bool','启用'],['prob','num','概率0-1']]},voice:{t:'语音TTS',f:[['enabled','bool','启用'],['voice','text','音色']]},proactive:{t:'主动发言',f:[['enabled','bool','启用'],['quiet_start','text','静默开始'],['quiet_end','text','静默结束'],['min_idle_h','num','最小空闲h']]},reply:{t:'回复',f:[['max_tokens','num','最大tokens'],['history','num','上下文条数'],['reasoning','sel:none low medium high','推理强度'],['bubble_len','num','每句字数']]},rate:{t:'频率',f:[['qpm','num','每分钟上限']]},emotion:{t:'情绪/好感',f:[['enabled','bool','启用'],['use_llm','bool','LLM评估(慢)'],['decay_per_hour','num','每小时衰减'],['baseline_affinity','num','初始好感']]},moderation:{t:'屏蔽词',f:[['enabled','bool','启用'],['words','text','词库(逗号分隔)'],['action','sel:skip mask','命中处理']]},autonomy:{t:'自主行为',f:[['enabled','bool','启用'],['allow_like','bool','自主点赞'],['allow_qzone_post','bool','自主发说说'],['allow_nickname','bool','自主改昵称'],['min_interval_hours','num','最短间隔(小时)'],['allow_avatar','bool','自主换头像(未启用)']]},humanize:{t:'拟人化(分条/延迟)',f:[['enabled','bool','启用'],['read_min_ms','num','读延迟下限ms'],['read_max_ms','num','读延迟上限ms'],['per_char_ms','num','每字ms'],['bubble_gap_min_ms','num','气泡间隔下限ms'],['bubble_gap_max_ms','num','气泡间隔上限ms']]},web:{t:'联网',f:[['enabled','bool','启用'],['max_results','num','结果条数'],['allow_image','bool','允许找图']]}};
 let _s={};
 async function loadModules(){_s=await api('/api/settings_full');let h='';for(const sec in MSCHEMA){const def=MSCHEMA[sec];h+='<div class="card" style="margin:0 0 10px;padding:13px"><b>'+def.t+'</b><div class="toolbar" style="margin-top:8px">';for(const fld of def.f){const k=fld[0],ty=fld[1],lab=fld[2],v=_s[sec][k];if(ty==='bool'){h+='<label class="mini"><input type="checkbox" id="set_'+sec+'_'+k+'" '+(v?'checked':'')+'> '+lab+'</label>';}else if(ty.indexOf('sel:')===0){const opts=ty.slice(4).split(' ');h+=lab+' <select id="set_'+sec+'_'+k+'">'+opts.map(o=>'<option '+(o===v?'selected':'')+'>'+o+'</option>').join('')+'</select>';}else{const t2=ty==='num'?'number':'text';h+=lab+' <input type="'+t2+'" '+(ty==='num'?'step=any ':'')+'id="set_'+sec+'_'+k+'" value="'+v+'" size="'+(ty==='num'?'6':'10')+'">';}}h+='</div></div>';}document.getElementById('modEditor').innerHTML=h}
 async function saveSettingsFull(){const patch={};for(const sec in MSCHEMA){patch[sec]={};for(const fld of MSCHEMA[sec].f){const k=fld[0],ty=fld[1];const el=document.getElementById('set_'+sec+'_'+k);patch[sec][k]=ty==='bool'?el.checked:(ty==='num'?parseFloat(el.value):el.value);}}const r=await api('/api/settings_full',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});document.getElementById('modRet').textContent=r.ok?'已保存并生效':'保存失败'}
@@ -230,6 +235,8 @@ async function doQzonePost(){const content=document.getElementById('qzText').val
 async function loadFeeds(){const r=await api('/api/qzone/feeds');document.getElementById('feedRows').innerHTML=(r.feeds||[]).map(f=>'<tr><td>'+f.nick+'</td><td>'+f.content+'</td><td class="mini">'+f.tid+'</td><td><button class="act lock" onclick="likeTid(\''+f.tid+'\')">赞</button><button class="act del" onclick="delTid(\''+f.tid+'\')">删</button></td></tr>').join('')||'<tr><td colspan=4 class=dim>无动态</td></tr>'}
 async function likeTid(tid){const r=await api('/api/qzone/like',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tid})});alert(r.ok?'点赞成功':('失败:'+(r.msg||'')))}
 async function delTid(tid){if(!confirm('删除这条说说？'))return;const r=await api('/api/qzone/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tid})});alert(r.ok?'已删':('失败:'+(r.msg||'')))}
+async function webSearch(){const q=document.getElementById('webQ').value;if(!q)return;document.getElementById('webRet').textContent='搜索中…';const r=await api('/api/web/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});document.getElementById('webRet').textContent='';document.getElementById('webResults').innerHTML=(r.results||[]).map(x=>'<div style="margin:6px 0"><a href="'+x.url+'" target="_blank" class="k">'+x.title+'</a><div class="mini">'+x.snippet+'</div></div>').join('')||'无结果'}
+async function webImage(){const q=document.getElementById('webQ').value;if(!q)return;document.getElementById('webRet').textContent='找图中…';const r=await api('/api/web/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});document.getElementById('webRet').textContent='共 '+(r.images||[]).length+' 张';document.getElementById('webResults').innerHTML=(r.images||[]).map(u=>'<div class="mini">'+u+'</div>').join('')||'无图'}
 async function loadSettings(){const m=await api('/api/model');document.getElementById('mBase').value=m.base;document.getElementById('mModel').value=m.model;document.getElementById('mKey').placeholder=m.key_set?'(已设置,留空不改)':'(未设置)';
  const s=await api('/api/settings');document.getElementById('proactiveBox').innerHTML='当前 <b class="'+(s.proactive?'ok':'bad')+'">'+(s.proactive?'开启':'关闭')+'</b> <button class="act" onclick="toggleProactive('+(s.proactive?'false':'true')+')">'+(s.proactive?'关闭':'开启')+'</button>';document.getElementById('settingsExtra').innerHTML='静默 '+s.quiet_start+'-'+s.quiet_end+' · 表情概率 '+s.emoji_prob+' · 表情包 '+s.sticker_count+' 张';
  const bs=await api('/api/backups');document.getElementById('baks').innerHTML='备份：'+((bs.backups||[]).map(b=>b.name+' ('+b.size_kb+'KB)').join(' · ')||'无');
@@ -481,6 +488,10 @@ class Admin:
                 elif p == "/api/qzone/delete":
                     r = actions.qzone_delete(admin.channel, str(d.get("tid", "")))
                     self._json(200, {"ok": bool(r and r.get("status") == "ok"), "msg": (r or {}).get("message", "")})
+                elif p == "/api/web/search":
+                    self._json(200, {"results": webmod.search(str(d.get("q", "")), 6)})
+                elif p == "/api/web/image":
+                    self._json(200, {"images": webmod.image_search(str(d.get("q", "")), 8)})
                 elif p == "/api/facts/add":
                     admin.store.add_fact(str(d.get("peer", "")), str(d.get("k", "")), str(d.get("v", "")), 1.0, "manual"); self._json(200, {"ok": True})
                 elif p == "/api/facts/delete":
