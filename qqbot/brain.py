@@ -286,7 +286,7 @@ class Brain:
                 except Exception:
                     reply = "唔…刚刚走神了，你再说一遍嘛"
             else:
-                return Outbound(inbound.scene, inbound.peer_id, [Segment.text("（阿渔走神了…等一下下）")],
+                return Outbound(inbound.scene, inbound.peer_id, [Segment.text("（走神了…等一下下）")],
                                 reply_to=inbound.message_id or None)
 
         if mod.get("enabled"):
@@ -294,7 +294,7 @@ class Brain:
             for w in wlist:
                 reply = reply.replace(w, "＊" * len(w))
         self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
-                               sender_id="bot", sender_name="阿渔", role="assistant", content=reply)
+                               sender_id="bot", sender_name="FotlimBOT", role="assistant", content=reply)
         segs = [Segment.text(p) for p in split_bubbles(reply, bubble_len)]
         if emo and float(emo.get("energy", 80)) < 30:
             segs = segs[:1]
@@ -324,7 +324,7 @@ class Brain:
         except Exception:
             reply = "在吗…突然有点想问问你今天过得怎么样"
         self.store.add_message(channel="proactive", scene=scene, peer_id=peer_id,
-                               sender_id="bot", sender_name="阿渔", role="assistant", content=reply)
+                               sender_id="bot", sender_name="FotlimBOT", role="assistant", content=reply)
         segs = [Segment.text(p) for p in split_bubbles(reply, int(st["reply"].get("bubble_len", 28)))]
         stk = self._maybe_sticker_segment(emotion.sticker_category(emo) if emo else None)
         if stk is not None:

@@ -107,12 +107,12 @@ class Scheduler:
                     ok = bool(r and r.get("status") == "ok")
             elif act == "qzone":
                 txt = self.brain.llm.chat(
-                    [{"role": "system", "content": "你是阿渔，用一句简短治愈的话发QQ空间说说，不加话题不卖萌过度"},
+                    [{"role": "system", "content": "你是FotlimBOT，用一句简短治愈的话发QQ空间说说，不加话题不卖萌过度"},
                      {"role": "user", "content": "写一句今天的心情"}], max_tokens=50, reasoning="none")
                 r = actions.qzone_publish(self.channel, (txt or "今天也是想你的一天").strip())
                 ok = bool(r and r.get("status") == "ok")
             elif act == "nick":
-                r = actions.set_nickname(self.channel, "阿渔·今天也元气满满")
+                r = actions.set_nickname(self.channel, "FotlimBOT·今天也元气满满")
                 ok = bool(r and r.get("status") == "ok")
         except Exception:
             ok = False

@@ -23,7 +23,7 @@ from . import meme as mememod
 
 _HTML = r'''<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>阿渔 · 控制台</title>
+<title>FotlimBOT · 控制台</title>
 <style>
 *{box-sizing:border-box}
 :root{--bg:#0b0e14;--side:#0e131b;--card:#121722;--card2:#151b27;--line:#1e2633;--tx:#dbe2ec;--dim:#8b95a7;--acc:#3b82f6;--acc2:#22d3ee;--ok:#34d399;--warn:#fbbf24;--bad:#f87171}
@@ -84,7 +84,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
 </style></head><body>
 <div class="app">
 <aside class="side">
-  <div class="brand"><span class="logo">🐟</span><span>阿渔</span></div>
+  <div class="brand"><span class="logo">🐟</span><span>FotlimBOT</span></div>
   <div class="nav-item on" data-tab="dash"><span class="ic">📊</span>仪表盘</div>
   <div class="nav-item" data-tab="chat"><span class="ic">💬</span>对话</div>
   <div class="nav-item" data-tab="facts"><span class="ic">🧠</span>记忆</div>
@@ -95,6 +95,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   <div class="nav-item" data-tab="emotions"><span class="ic">💗</span>情绪</div>
   <div class="nav-item" data-tab="caps"><span class="ic">🛠️</span>能力</div>
   <div class="nav-item" data-tab="memes"><span class="ic">😊</span>表情</div>
+  <div class="nav-item" data-tab="voice"><span class="ic">🔊</span>音色</div>
   <div class="nav-item" data-tab="send"><span class="ic">✉️</span>发送</div>
 </aside>
 <main class="main">
@@ -206,6 +207,14 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
     </div>
     <div class="card"><h3>发一张</h3><div class="toolbar">目标 <input id="mSendPeer" size="12" placeholder="QQ号"> 场景 <select id="mSendScene"><option value="private">私聊</option><option value="group">群聊</option></select> 图库ID <input id="mSendId" size="8" placeholder="ID"><button class="act" onclick="sendMeme()">发送</button> <span id="sendMemeRet" class="r"></span></div></div>
   </section>
+  <section id="tab-voice" class="page">
+    <div class="card"><h3>音色（TTS 试听选线）</h3>
+      <div class="toolbar">当前音色：<b id="curVoice">?</b> <button class="act gray" onclick="loadVoices()">在线刷新音色列表</button></div>
+      <div class="toolbar">试听文本 <input id="vText" size="34" value="你好呀，我是 FotlimBOT，很高兴认识你～"></div>
+      <div id="voiceRows"></div>
+      <audio id="vAudio" controls style="width:100%;margin-top:10px"></audio>
+    </div>
+  </section>
 </main></div>
 
 <script>
@@ -223,7 +232,7 @@ async function loadDash(){const d=await api('/api/dashboard');
  document.getElementById('chart').innerHTML=d.byday.map(x=>'<div style="display:inline-block;text-align:center;margin-right:14px"><div class="bar" style="height:'+Math.round(x.count/max*120)+'px;width:36px"></div><div class="mini">'+x.day+'</div><div class="mini">'+x.count+'</div></div>').join('');
 }
 async function loadPeers(){const ps=await api('/api/peers');const sel=document.getElementById('peerSel');sel.innerHTML='';ps.peers.forEach(p=>{const o=document.createElement('option');o.value=p.peer_id;o.textContent=p.peer_id+' ('+p.count+'条)';sel.appendChild(o)});document.getElementById('peerCnt').textContent=ps.peers.length;if(ps.peers.length)loadMsgs();else document.getElementById('msgs').innerHTML='<span class=dim>暂无对话</span>'}
-async function loadMsgs(){const peer=document.getElementById('peerSel').value;if(!peer)return;const m=await api('/api/messages?peer='+encodeURIComponent(peer));document.getElementById('msgs').innerHTML=m.messages.map(x=>'<div class="msgrow '+(x.role==='assistant'?'right':'left')+'"><div class="bubble '+(x.role==='assistant'?'bot':'me')+'"><div class="mini">'+fmt(x.ts)+(x.role==='assistant'?' · 阿渔':(' · '+(x.name||x.role)))+'</div>'+x.content+'</div></div>').join('')}
+async function loadMsgs(){const peer=document.getElementById('peerSel').value;if(!peer)return;const m=await api('/api/messages?peer='+encodeURIComponent(peer));document.getElementById('msgs').innerHTML=m.messages.map(x=>'<div class="msgrow '+(x.role==='assistant'?'right':'left')+'"><div class="bubble '+(x.role==='assistant'?'bot':'me')+'"><div class="mini">'+fmt(x.ts)+(x.role==='assistant'?' · FotlimBOT':(' · '+(x.name||x.role)))+'</div>'+x.content+'</div></div>').join('')}
 function exportPeer(){const peer=document.getElementById('peerSel').value;if(!peer)return;window.open('/api/export?peer='+encodeURIComponent(peer)+'&token='+encodeURIComponent(T),'_blank')}
 async function delPeer(){const peer=document.getElementById('peerSel').value;if(!peer||!confirm('删除 '+peer+' 的对话记录？'))return;await api('/api/peer/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer})});loadPeers()}
 async function loadFacts(){const f=await api('/api/facts');document.getElementById('factRows').innerHTML=f.facts.map(x=>'<tr><td>'+x.peer+'</td><td><span class=tag>'+x.k+'</span></td><td>'+x.v+'</td><td>'+x.conf+'</td><td><button class="act del" onclick="delFact('+x.id+')">删</button><button class="act lock" onclick="lockFact('+x.id+','+(x.locked?'false':'true')+')">'+(x.locked?'已锁':'锁定')+'</button></td></tr>').join('')||'<tr><td colspan=5 class=dim>暂无事实</td></tr>'}
@@ -255,6 +264,9 @@ async function importMeme(){const url=document.getElementById('mUrl').value,pack
 async function delMeme(id){if(!confirm('删除这张？'))return;await api('/api/memes/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadMemes()}
 async function saveMeme(id){const tag=document.getElementById('mt_'+id).value,caption=document.getElementById('mc_'+id).value;await api('/api/memes/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,tag,caption})});loadMemes()}
 async function sendMeme(){const id=document.getElementById('mSendId').value,peer=document.getElementById('mSendPeer').value,scene=document.getElementById('mSendScene').value;const r=await api('/api/memes/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:parseInt(id),peer,scene})});document.getElementById('sendMemeRet').textContent=r.ok?'已发送':('失败:'+(r.msg||''))}
+async function loadVoices(){const r=await api('/api/voices');document.getElementById('curVoice').textContent=r.current||'?';document.getElementById('voiceRows').innerHTML=(r.voices||[]).map(v=>'<div class="card" style="margin:0 0 8px;padding:10px;display:flex;justify-content:space-between;align-items:center"><div><b>'+v.name+'</b> <span class="mini">'+v.gender+' · '+v.locale+'</span></div><div><button class="act gray" onclick="previewVoice(\''+v.name+'\')">试听</button><button class="act" onclick="selectVoice(\''+v.name+'\')">选用</button></div></div>').join('')}
+async function previewVoice(name){const text=document.getElementById('vText').value;const r=await api('/api/voice/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:name,text})});if(r.ok&&r.audio){const a=document.getElementById('vAudio');a.src='data:audio/mp3;base64,'+r.audio;a.play()}else alert('试听失败:'+(r.msg||''))}
+async function selectVoice(name){await api('/api/voice/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:name})});document.getElementById('curVoice').textContent=name}
 async function loadSettings(){const m=await api('/api/model');document.getElementById('mBase').value=m.base;document.getElementById('mModel').value=m.model;document.getElementById('mKey').placeholder=m.key_set?'(已设置,留空不改)':'(未设置)';
  const s=await api('/api/settings');document.getElementById('proactiveBox').innerHTML='当前 <b class="'+(s.proactive?'ok':'bad')+'">'+(s.proactive?'开启':'关闭')+'</b> <button class="act" onclick="toggleProactive('+(s.proactive?'false':'true')+')">'+(s.proactive?'关闭':'开启')+'</button>';document.getElementById('settingsExtra').innerHTML='静默 '+s.quiet_start+'-'+s.quiet_end+' · 表情概率 '+s.emoji_prob+' · 表情包 '+s.sticker_count+' 张';
  const bs=await api('/api/backups');document.getElementById('baks').innerHTML='备份：'+((bs.backups||[]).map(b=>b.name+' ('+b.size_kb+'KB)').join(' · ')||'无');
@@ -265,8 +277,8 @@ async function toggleProactive(v){await api('/api/settings/proactive',{method:'P
 async function doBackup(){const r=await api('/api/backup',{method:'POST'});document.getElementById('bakRet').textContent=r.ok?('已备份 '+r.file):('失败 '+(r.error||''));loadSettings()}
 async function savePersona(){const text=document.getElementById('persona').value;const r=await api('/api/persona',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});document.getElementById('pRet').textContent=r.ok?'已保存':('失败')}
 async function doSend(){const scene=document.getElementById('sScene').value,peer=document.getElementById('sPeer').value,text=document.getElementById('sText').value,image_url=document.getElementById('sImg').value,voice_text=document.getElementById('sVoice').value,sticker=document.getElementById('sSticker').checked;const r=await api('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scene,peer,text,image_url,voice_text,sticker})});document.getElementById('sRet').textContent=JSON.stringify(r)}
-const TITLES={dash:'仪表盘',chat:'对话',facts:'记忆',modules:'模块',acl:'名单',logs:'日志',settings:'设置',send:'发送',emotions:'情绪',caps:'能力',memes:'表情'};
-const loaders={dash:loadDash,chat:loadPeers,facts:loadFacts,modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings,emotions:loadEmotions,caps:loadCaps,memes:loadMemes};
+const TITLES={dash:'仪表盘',chat:'对话',facts:'记忆',modules:'模块',acl:'名单',logs:'日志',settings:'设置',send:'发送',emotions:'情绪',caps:'能力',memes:'表情',voice:'音色'};
+const loaders={dash:loadDash,chat:loadPeers,facts:loadFacts,modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings,emotions:loadEmotions,caps:loadCaps,memes:loadMemes,voice:loadVoices};
 document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.page').forEach(t=>t.classList.remove('on'));document.getElementById('tab-'+b.dataset.tab).classList.add('on');document.getElementById('pageTitle').textContent=TITLES[b.dataset.tab]||'';if(loaders[b.dataset.tab])loaders[b.dataset.tab]()});
 setInterval(refreshStatus,3000);refreshStatus();loadDash();
 </script></body></html>'''
@@ -451,6 +463,9 @@ class Admin:
                     self._json(200, {"feeds": actions.simplify_feeds(actions.qzone_feeds(admin.channel))})
                 elif p == "/api/memes":
                     self._json(200, {"memes": admin.store.meme_list(q.get("pack", [""])[0] or None, q.get("tag", [""])[0] or None, q.get("q", [""])[0] or None)})
+                elif p == "/api/voices":
+                    self._json(200, {"voices": voice.list_voices(zh_only=True),
+                                     "current": admin.store.get_settings()["voice"].get("voice", "")})
                 elif p == "/api/model":
                     llm = admin.brain.llm
                     self._json(200, {"base": getattr(llm, "base", ""), "model": getattr(llm, "model", ""), "key_set": bool(getattr(llm, "key", ""))})
@@ -537,6 +552,16 @@ class Admin:
                         ok = admin.channel.send(Outbound(d.get("scene", "private"), str(d.get("peer", "")),
                                                          [Segment("image", {"file": "base64://" + b64})]))
                         self._json(200, {"ok": bool(ok)})
+                elif p == "/api/voice/preview":
+                    vname = str(d.get("voice", "") or voice.DEFAULT_VOICE)
+                    txt = str(d.get("text", "") or "你好呀，我是 FotlimBOT")
+                    b64 = voice.preview_b64(txt, vname)
+                    self._json(200, ({"ok": True, "audio": b64} if b64 else {"ok": False, "msg": "合成失败"}))
+                elif p == "/api/voice/select":
+                    vname = str(d.get("voice", ""))
+                    if vname:
+                        admin.store.set_settings({"voice": {"voice": vname}})
+                    self._json(200, {"ok": bool(vname)})
                 elif p == "/api/facts/add":
                     admin.store.add_fact(str(d.get("peer", "")), str(d.get("k", "")), str(d.get("v", "")), 1.0, "manual"); self._json(200, {"ok": True})
                 elif p == "/api/facts/delete":

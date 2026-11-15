@@ -13,9 +13,9 @@ def run_demo(brain: Brain) -> None:
         Inbound("mock", "private", "u1001", "u1001", "小林",
                 [Segment.text("你还记得我上次说要去面试吗")], "m2"),
         Inbound("mock", "group", "g2002", "u1003", "老王",
-                [Segment.at("bot"), Segment.text("阿渔你在不在，聊两句")], "m3"),
+                [Segment.at("bot"), Segment.text("FotlimBOT你在不在，聊两句")], "m3"),
         Inbound("mock", "group", "g2002", "u1004", "路人",
-                [Segment.text("（群里在聊别的，没叫阿渔）")], "m4"),
+                [Segment.text("（群里在聊别的，没叫FotlimBOT）")], "m4"),
     ]
     for msg in scripted:
         print(f"\n[{msg.scene}] {msg.sender_name}: {msg.text}")
@@ -24,4 +24,4 @@ def run_demo(brain: Brain) -> None:
             print("  (未插话 / 静默 —— 这是设计，不是故障)")
             continue
         for seg in out.segments:
-            print(f"  阿渔 → {seg.data.get('text','')}")
+            print(f"  FotlimBOT → {seg.data.get('text','')}")

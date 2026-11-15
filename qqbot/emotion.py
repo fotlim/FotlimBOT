@@ -68,7 +68,7 @@ def appraise_heuristic(text: str):
 
 
 def appraise_llm(llm, text: str):
-    sys_p = ('你在为角色"阿渔"评估用户这句话的情绪影响。只输出一行 JSON：'
+    sys_p = ('你在为角色"FotlimBOT"评估用户这句话的情绪影响。只输出一行 JSON：'
              '{"d_pleasure":数,"d_arousal":数,"d_dominance":数,"d_affinity":数,"event":"标签"}，'
              '各 d 值范围 -0.2~0.2（d_affinity -10~10）。')
     try:
