@@ -39,6 +39,9 @@ DEFAULT_SETTINGS = {
     "rate": {"qpm": 20},
     "emotion": {"enabled": True, "use_llm": False, "decay_per_hour": 3.0,
                 "baseline_affinity": 50.0, "baseline_p": 0.6, "baseline_a": 0.35, "baseline_d": 0.6},
+    "moderation": {"enabled": True, "words": "傻逼,操你,去死,滚蛋,妈的,煞笔,贱", "action": "skip"},
+    "autonomy": {"enabled": True, "allow_like": True, "allow_qzone_post": False,
+                 "allow_nickname": False, "allow_avatar": False, "min_interval_hours": 6},
 }
 
 

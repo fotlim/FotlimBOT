@@ -1,6 +1,7 @@
-"""OneBot v11 通道（类）：断线重连 + 线程池并发处理 + 供调度器主动 send。"""
+"""OneBot v11 通道（类）：断线重连 + 线程池并发 + 通用 call_action + 供调度器主动 send。"""
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 import time
@@ -18,15 +19,14 @@ CAPS = Capabilities(
 )
 
 
-def _to_inbound(ev: dict) -> Inbound | None:
+def _to_inbound(ev: dict):
     if ev.get("post_type") != "message":
         return None
     scene = "group" if ev.get("message_type") == "group" else "private"
     peer = str(ev.get("group_id")) if scene == "group" else str(ev.get("user_id"))
     segs: list[Segment] = []
     for m in ev.get("message", []) or []:
-        t = m.get("type")
-        d = m.get("data", {}) or {}
+        t = m.get("type"); d = m.get("data", {}) or {}
         if t == "text":
             segs.append(Segment("text", {"text": d.get("text", "")}))
         elif t == "at":
@@ -67,15 +67,17 @@ class OneBot11Channel:
         self.connected = False
         self._send_lock = threading.Lock()
         self._pool = ThreadPoolExecutor(max_workers=6)
+        self._pending = {}
+        self._pend_lock = threading.Lock()
+        self._seq = itertools.count(1)
 
     def send(self, out: Outbound) -> bool:
         msg = _build_message(out)
         if not msg:
             return False
-        if out.scene == "group":
-            params = {"message_type": "group", "group_id": int(out.peer_id), "message": msg}
-        else:
-            params = {"message_type": "private", "user_id": int(out.peer_id), "message": msg}
+        params = ({"message_type": "group", "group_id": int(out.peer_id)} if out.scene == "group"
+                  else {"message_type": "private", "user_id": int(out.peer_id)})
+        params["message"] = msg
         with self._send_lock:
             if not self.ws or not self.connected:
                 return False
@@ -85,7 +87,38 @@ class OneBot11Channel:
             except Exception:
                 return False
 
-    def _handle(self, inbound: Inbound, brain: Brain) -> None:
+    def call_action(self, action: str, params: dict | None = None, timeout: int = 20):
+        if not self.ws or not self.connected:
+            return None
+        echo = "a" + str(next(self._seq))
+        slot = {"ev": threading.Event(), "r": None}
+        with self._pend_lock:
+            self._pending[echo] = slot
+        try:
+            with self._send_lock:
+                self.ws.send(json.dumps({"action": action, "params": params or {}, "echo": echo}))
+            if slot["ev"].wait(timeout):
+                return slot["r"]
+            return None
+        except Exception:
+            return None
+        finally:
+            with self._pend_lock:
+                self._pending.pop(echo, None)
+
+    def _resolve(self, ev: dict) -> bool:
+        echo = ev.get("echo")
+        if echo is None:
+            return False
+        with self._pend_lock:
+            slot = self._pending.get(echo)
+        if slot:
+            slot["r"] = ev
+            slot["ev"].set()
+            return True
+        return False
+
+    def _handle(self, inbound, brain: Brain) -> None:
         try:
             out = brain.respond(inbound, CAPS)
             if out is not None and self.send(out):
@@ -108,12 +141,15 @@ class OneBot11Channel:
                         ev = json.loads(raw)
                     except Exception:
                         continue
-                    if not isinstance(ev, dict) or "post_type" not in ev:
+                    if not isinstance(ev, dict):
+                        continue
+                    if "post_type" not in ev:
+                        self._resolve(ev)
                         continue
                     inbound = _to_inbound(ev)
                     if inbound is None:
                         continue
-                    self._pool.submit(self._handle, inbound, brain)  # 不阻塞收包
+                    self._pool.submit(self._handle, inbound, brain)
             except Exception as e:
                 self.connected = False
                 log_print(f"[onebot11] disconnected: {e!r}; retry 3s")

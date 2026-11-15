@@ -63,15 +63,30 @@ class Brain:
     ]
 
     def __init__(self, llm: LLMClient, persona: str, store: Store,
-                 emoji_prob: float = 0.18, sticker_dir: str = ""):
+                 emoji_prob: float = 0.18, sticker_dir: str = "", persona_file: str = ""):
         self.llm = llm
         self.persona = persona
         self.store = store
         self.emoji_prob = emoji_prob
         self.sticker_dir = sticker_dir
+        self.persona_file = persona_file
+        self.channel = None
+
+    def _current_persona(self) -> str:
+        p = getattr(self, "persona_file", "")
+        if p:
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    t = f.read().strip()
+                if t:
+                    self.persona = t
+                    return t
+            except Exception:
+                pass
+        return self.persona
 
     def _sys(self) -> str:
-        return (self.persona + "\n\n规则：像真人聊 QQ，短句口语，多用语气词；"
+        return (self._current_persona() + "\n\n规则：像真人聊 QQ，短句口语，多用语气词；"
                 "不要 markdown、不要分点、不要自称 AI、不要长篇大论。")
 
     def _extract_facts(self, text, peer_id):
@@ -135,6 +150,14 @@ class Brain:
         if white and inbound.peer_id not in white:
             return None
 
+        st0 = self.store.get_settings()
+        mod = st0.get("moderation", {})
+        if mod.get("enabled") and inbound.text:
+            wlist = [w for w in re.split(r"[,，\s]+", str(mod.get("words", ""))) if w]
+            if any(w in inbound.text for w in wlist):
+                self.store.log_action("blocked", inbound.peer_id, inbound.text[:40])
+                return None
+
         images = [s for s in inbound.segments if s.type == "image"]
         voices = [s for s in inbound.segments if s.type == "voice"]
         if not inbound.text and not images and not voices:
@@ -197,6 +220,10 @@ class Brain:
                 return Outbound(inbound.scene, inbound.peer_id, [Segment.text("（阿渔走神了…等一下下）")],
                                 reply_to=inbound.message_id or None)
 
+        if mod.get("enabled"):
+            wlist = [w for w in re.split(r"[,，\s]+", str(mod.get("words", ""))) if w]
+            for w in wlist:
+                reply = reply.replace(w, "＊" * len(w))
         self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
                                sender_id="bot", sender_name="阿渔", role="assistant", content=reply)
         segs = [Segment.text(p) for p in split_bubbles(reply, bubble_len)]

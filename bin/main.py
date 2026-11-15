@@ -33,7 +33,7 @@ def main() -> int:
     store = Store(os.path.join(cfg.data_dir, "qqbot.db"))
     brain = Brain(llm=LLMClient(cfg.llm_base, cfg.llm_key, cfg.llm_model),
                   persona=persona_mod.load(cfg.persona_file), store=store,
-                  emoji_prob=cfg.emoji_prob, sticker_dir=cfg.sticker_dir)
+                  emoji_prob=cfg.emoji_prob, sticker_dir=cfg.sticker_dir, persona_file=cfg.persona_file)
 
     if cfg.channel == "mock":
         from qqbot.channels.mock import run_demo
@@ -50,6 +50,7 @@ def main() -> int:
     if cfg.channel == "onebot11":
         from qqbot.channels.onebot11 import OneBot11Channel
         ch = OneBot11Channel(cfg.onebot_ws)
+        brain.channel = ch
         sched = Scheduler(brain, ch, store, cfg)
         Admin(cfg.admin_host, cfg.admin_port, cfg.admin_token, store, ch, brain,
               time.time(), sticker_dir=cfg.sticker_dir, scheduler=sched, cfg=cfg).start()

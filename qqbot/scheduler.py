@@ -76,3 +76,47 @@ class Scheduler:
                 self.store.log_action("proactive", peer, hint)
                 print("[sched] proactive ->", peer, flush=True)
                 time.sleep(2)
+        self._autonomy()
+
+    def _autonomy(self) -> None:
+        a = self.store.get_settings().get("autonomy", {})
+        if not a.get("enabled"):
+            return
+        import random
+        now = time.time()
+        if now - float(self.store.kv_get("autonomy:last", 0) or 0) < float(a.get("min_interval_hours", 6)) * 3600:
+            return
+        acts = []
+        if a.get("allow_like"):
+            acts.append("like")
+        if a.get("allow_qzone_post"):
+            acts.append("qzone")
+        if a.get("allow_nickname"):
+            acts.append("nick")
+        if not acts:
+            return
+        act = random.choice(acts)
+        from . import actions
+        ok = False
+        try:
+            if act == "like":
+                feeds = [f for f in actions.simplify_feeds(actions.qzone_feeds(self.channel)) if f.get("tid")]
+                if feeds:
+                    f = random.choice(feeds)
+                    r = actions.qzone_like(self.channel, f["tid"])
+                    ok = bool(r and r.get("status") == "ok")
+            elif act == "qzone":
+                txt = self.brain.llm.chat(
+                    [{"role": "system", "content": "你是阿渔，用一句简短治愈的话发QQ空间说说，不加话题不卖萌过度"},
+                     {"role": "user", "content": "写一句今天的心情"}], max_tokens=50, reasoning="none")
+                r = actions.qzone_publish(self.channel, (txt or "今天也是想你的一天").strip())
+                ok = bool(r and r.get("status") == "ok")
+            elif act == "nick":
+                r = actions.set_nickname(self.channel, "阿渔·今天也元气满满")
+                ok = bool(r and r.get("status") == "ok")
+        except Exception:
+            ok = False
+        if ok:
+            self.store.kv_set("autonomy:last", str(now))
+            self.store.log_action("autonomy", act, "")
+            print("[sched] autonomy ->", act, flush=True)
