@@ -125,3 +125,35 @@ class Store:
                 (time.time(), kind, peer_id, detail),
             )
             self.conn.commit()
+
+    def add_fact(self, subject: str, skey: str, svalue: str, confidence: float = 0.7, source: str = "auto") -> None:
+        svalue = (svalue or "").strip()
+        if not svalue:
+            return
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT id, locked FROM facts WHERE subject=? AND skey=? AND status='active'",
+                (subject, skey),
+            ).fetchone()
+            if row:
+                if row[1]:
+                    return
+                self.conn.execute(
+                    "UPDATE facts SET svalue=?,confidence=?,ts=? WHERE id=?",
+                    (svalue, confidence, time.time(), row[0]),
+                )
+            else:
+                self.conn.execute(
+                    "INSERT INTO facts(subject,skey,svalue,confidence,status,locked,source,ts) "
+                    "VALUES(?,?,?,?,'active',0,?,?)",
+                    (subject, skey, svalue, confidence, source, time.time()),
+                )
+            self.conn.commit()
+
+    def facts_for(self, subject: str, limit: int = 10) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT skey,svalue FROM facts WHERE subject=? AND status='active' ORDER BY id DESC LIMIT ?",
+                (subject, limit),
+            ).fetchall()
+        return [{"k": k, "v": v} for k, v in rows]
