@@ -125,9 +125,28 @@ class Scheduler:
                 ok = bool(r and r.get("status") == "ok")
                 detail = "发了条说说"
             elif act == "nick":
-                r = actions.set_nickname(self.channel, "FotlimBOT·今天也元气满满")
+                try:
+                    nn = self.brain.llm.chat(
+                        [{"role": "system", "content": "给角色起一个简短的QQ昵称，6字以内，贴合心情，只输出昵称本身，不要引号不要解释"},
+                         {"role": "user", "content": "心情：平静，想换个新名字"}], max_tokens=24, reasoning="none")
+                except Exception:
+                    nn = ""
+                nick = (nn or "").strip().splitlines()[0][:20] if (nn or "").strip() else "FotlimBOT"
+                r = actions.set_nickname(self.channel, nick)
                 ok = bool(r and r.get("status") == "ok")
-                detail = "改了昵称"
+                detail = "改昵称为 " + nick
+                try:
+                    li = actions.get_login_info(self.channel)
+                    uid = ((li or {}).get("data") or {}).get("user_id")
+                    gl = actions.get_group_list(self.channel)
+                    groups = ((gl or {}).get("data") or [])
+                    if uid:
+                        for g in groups[:5]:
+                            gid = g.get("group_id")
+                            if gid:
+                                actions.set_group_card(self.channel, gid, uid, nick)
+                except Exception:
+                    pass
             elif act == "avatar":
                 p = self.store.meme_pick(None)
                 if not p:

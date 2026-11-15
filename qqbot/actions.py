@@ -25,6 +25,18 @@ def set_sign(channel, text: str):
     return _r(channel, "set_self_longnick", {"longNick": text})
 
 
+def get_login_info(channel):
+    return _r(channel, "get_login_info", {})
+
+
+def get_group_list(channel):
+    return _r(channel, "get_group_list", {})
+
+
+def set_group_card(channel, group_id, user_id, card: str):
+    return _r(channel, "set_group_card", {"group_id": int(group_id), "user_id": int(user_id), "card": card})
+
+
 def qzone_publish(channel, content: str, images=None):
     p = {"content": content}
     if images:
