@@ -42,7 +42,7 @@ DEFAULT_SETTINGS = {
     "emoji": {"enabled": True, "prob": 0.18},
     "voice": {"enabled": True, "voice": "zh-CN-XiaoxiaoNeural"},
     "proactive": {"enabled": True, "quiet_start": "22:30", "quiet_end": "08:00", "min_idle_h": 2},
-    "reply": {"max_tokens": 240, "history": 8, "reasoning": "high", "bubble_len": 28},
+    "reply": {"max_tokens": 120, "history": 8, "reasoning": "high", "bubble_len": 18},
     "rate": {"qpm": 20},
     "emotion": {"enabled": True, "use_llm": False, "decay_per_hour": 3.0,
                 "baseline_affinity": 50.0, "baseline_p": 0.6, "baseline_a": 0.35, "baseline_d": 0.6},
