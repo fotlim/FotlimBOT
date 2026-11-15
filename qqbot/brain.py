@@ -86,8 +86,9 @@ class Brain:
         return self.persona
 
     def _sys(self) -> str:
-        return (self._current_persona() + "\n\n规则：像真人聊 QQ，短句口语，多用语气词；"
-                "不要 markdown、不要分点、不要自称 AI、不要长篇大论。")
+        return (self._current_persona() + "\n\n规则：像真人在 QQ 上聊天——短句、口语、多用语气词和省略号；"
+                "可以有小情绪、偶尔说半句/欲言又止，不必每句都完整；自然回应对方，不要像客服、不要 markdown、"
+                "不要分点、不要自称 AI、不要长篇大论。")
 
     def _extract_facts(self, text, peer_id):
         s = self.store.get_settings()

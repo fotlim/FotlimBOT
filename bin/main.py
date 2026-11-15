@@ -51,6 +51,7 @@ def main() -> int:
         from qqbot.channels.onebot11 import OneBot11Channel
         ch = OneBot11Channel(cfg.onebot_ws)
         brain.channel = ch
+        ch.store = store
         sched = Scheduler(brain, ch, store, cfg)
         Admin(cfg.admin_host, cfg.admin_port, cfg.admin_token, store, ch, brain,
               time.time(), sticker_dir=cfg.sticker_dir, scheduler=sched, cfg=cfg).start()

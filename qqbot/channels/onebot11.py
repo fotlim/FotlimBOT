@@ -70,22 +70,54 @@ class OneBot11Channel:
         self._pending = {}
         self._pend_lock = threading.Lock()
         self._seq = itertools.count(1)
+        self.store = None
 
-    def send(self, out: Outbound) -> bool:
-        msg = _build_message(out)
+    def _send_one(self, out: Outbound, seg) -> None:
+        msg = _build_message(Outbound(out.scene, out.peer_id, [seg]))
         if not msg:
-            return False
+            return
         params = ({"message_type": "group", "group_id": int(out.peer_id)} if out.scene == "group"
                   else {"message_type": "private", "user_id": int(out.peer_id)})
         params["message"] = msg
         with self._send_lock:
-            if not self.ws or not self.connected:
-                return False
-            try:
+            if self.ws and self.connected:
                 self.ws.send(json.dumps({"action": "send_msg", "params": params, "echo": "send"}))
-                return True
-            except Exception:
-                return False
+
+    def send(self, out: Outbound) -> bool:
+        if not out.segments or not self.ws or not self.connected:
+            return False
+        import random as _r
+        hz = {}
+        try:
+            if self.store is not None:
+                hz = self.store.get_settings().get("humanize", {})
+        except Exception:
+            hz = {}
+        enabled = bool(hz.get("enabled", True))
+        items = []
+        for s in out.segments:
+            if s.type == "text" and s.data.get("text"):
+                items.append(s)
+            elif s.type == "image" and s.data.get("file"):
+                items.append(s)
+            elif s.type == "record" and s.data.get("file"):
+                items.append(s)
+            elif s.type == "face" and s.data.get("id"):
+                items.append(s)
+        if not items:
+            return False
+        try:
+            if enabled:
+                time.sleep(_r.uniform(hz.get("read_min_ms", 600), hz.get("read_max_ms", 1600)) / 1000.0)
+            for i, s in enumerate(items):
+                if i > 0 and enabled:
+                    gap = _r.uniform(hz.get("bubble_gap_min_ms", 500), hz.get("bubble_gap_max_ms", 1400)) / 1000.0
+                    per = (len(s.data.get("text", "")) * hz.get("per_char_ms", 35) / 1000.0) if s.type == "text" else 0.0
+                    time.sleep(gap + per)
+                self._send_one(out, s)
+            return True
+        except Exception:
+            return False
 
     def call_action(self, action: str, params: dict | None = None, timeout: int = 20):
         if not self.ws or not self.connected:

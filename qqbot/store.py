@@ -42,6 +42,8 @@ DEFAULT_SETTINGS = {
     "moderation": {"enabled": True, "words": "傻逼,操你,去死,滚蛋,妈的,煞笔,贱", "action": "skip"},
     "autonomy": {"enabled": True, "allow_like": True, "allow_qzone_post": False,
                  "allow_nickname": False, "allow_avatar": False, "min_interval_hours": 6},
+    "humanize": {"enabled": True, "read_min_ms": 600, "read_max_ms": 1600, "per_char_ms": 35,
+                 "bubble_gap_min_ms": 500, "bubble_gap_max_ms": 1400},
 }
 
 
