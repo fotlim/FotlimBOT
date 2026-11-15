@@ -127,15 +127,15 @@ class Scheduler:
             elif act == "nick":
                 try:
                     nn = self.brain.llm.chat(
-                        [{"role": "system", "content": "给角色起一个简短的QQ昵称，6字以内，贴合心情，只输出昵称本身，不要引号不要解释"},
-                         {"role": "user", "content": "心情：平静，想换个新名字"}], max_tokens=40, reasoning="low")
+                        [{"role": "system", "content": "你是 FotlimBOT。自己决定一个你喜欢的 QQ 昵称，随意发挥、不必用项目名、风格自定、8 字以内；只输出昵称本身，不要引号不要解释。"},
+                         {"role": "user", "content": "换个新昵称吧"}], max_tokens=40, reasoning="low")
                 except Exception:
                     nn = ""
-                nick = (nn or "").strip().replace('"', "").splitlines()[0][:20] if (nn or "").strip() else ""
+                nick = (nn or "").strip().replace('"', "").splitlines()[0][:16] if (nn or "").strip() else ""
                 if not nick:
                     import random as _rnd
                     nick = _rnd.choice(["薄荷汽水", "今天也开心", "软软一条鱼", "不想上班", "晴天小满",
-                                        "晚风与猫", "咕噜咕噜", "阿呆本呆", "月亮邮差", "偷吃 token 的鱼"])
+                                        "晚风与猫", "咕噜咕噜", "阿呆本呆", "月亮邮差", "偷吃token的鱼"])
                 r = actions.set_nickname(self.channel, nick)
                 ok = bool(r and r.get("status") == "ok")
                 detail = "改昵称为 " + nick
@@ -152,14 +152,28 @@ class Scheduler:
                 except Exception:
                     pass
             elif act == "avatar":
-                p = self.store.meme_pick(None)
-                if not p:
-                    return {"ok": False, "act": act, "detail": "图库为空，先导入表情"}
-                import base64 as _b64
-                data = _b64.b64encode(open(p, "rb").read()).decode()
-                r = actions.set_avatar(self.channel, "base64://" + data)
-                ok = bool(r and r.get("status") == "ok")
-                detail = "换了头像"
+                ok = False
+                detail = ""
+                try:
+                    from . import web as webmod
+                    urls = webmod.image_search("二次元 少女 头像 高清", 8)
+                    url = next((u for u in urls if u), None)
+                    if url:
+                        r = actions.set_avatar(self.channel, url)
+                        ok = bool(r and r.get("status") == "ok")
+                        detail = "换了二次元头像（网络搜图）"
+                except Exception:
+                    ok = False
+                if not ok:
+                    p = self.store.meme_pick(None)
+                    if p:
+                        import base64 as _b64
+                        data = _b64.b64encode(open(p, "rb").read()).decode()
+                        r = actions.set_avatar(self.channel, "base64://" + data)
+                        ok = bool(r and r.get("status") == "ok")
+                        detail = "换了头像（图库）"
+                if not ok:
+                    return {"ok": False, "act": act, "detail": "换头像失败（网络搜图与图库都不可用）"}
         except Exception as e:
             return {"ok": False, "act": act, "detail": repr(e)[:120]}
         if ok:
