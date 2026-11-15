@@ -252,6 +252,15 @@ class Brain:
         return (None, None)
 
     def respond(self, inbound: Inbound, caps: Capabilities):
+        try:
+            from . import commands as cmdmod
+            if cmdmod.is_owner(self.store, inbound):
+                _oc = cmdmod.handle(inbound, self)
+                if _oc is not None:
+                    self._record_user(inbound)
+                    return _oc
+        except Exception:
+            pass
         black = self.store.kv_list_get("acl:black")
         white = self.store.kv_list_get("acl:white")
         if inbound.peer_id in black:
