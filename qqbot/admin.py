@@ -18,6 +18,7 @@ from . import logbus
 from . import emotion
 from . import actions
 from . import web as webmod
+from . import meme as mememod
 
 
 _HTML = r'''<!doctype html><html lang="zh"><head><meta charset="utf-8">
@@ -91,6 +92,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   <div class="nav-item" data-tab="settings"><span class="ic">⚙️</span>设置</div>
   <div class="nav-item" data-tab="emotions"><span class="ic">💗</span>情绪</div>
   <div class="nav-item" data-tab="caps"><span class="ic">🛠️</span>能力</div>
+  <div class="nav-item" data-tab="memes"><span class="ic">😊</span>表情</div>
   <div class="nav-item" data-tab="send"><span class="ic">✉️</span>发送</div>
 </aside>
 <main class="main">
@@ -194,6 +196,14 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
       <div id="webResults" class="mini"></div>
     </div>
   </section>
+  <section id="tab-memes" class="page">
+    <div class="card"><h3>表情包图库</h3>
+      <div class="toolbar">包 <input id="mPack" size="10" placeholder="包(可空)"> 标签 <input id="mTag" size="10" placeholder="情绪标签"> 关键词 <input id="mQ" size="14" placeholder="描述/关键词"><button class="act" onclick="loadMemes()">筛选</button><button class="act gray" onclick="scanMemes()">扫描目录</button> <span id="mInfo" class="mini"></span></div>
+      <div class="toolbar">导入ZIP <input id="mUrl" size="40" placeholder="包ZIP链接(支持github→自动走ghfast) 或本地路径"><input id="mNewPack" size="10" placeholder="导入到包"><button class="act" onclick="importMeme()">导入</button> <span id="importRet" class="r"></span></div>
+      <table><thead><tr><th>#</th><th>包</th><th>标签</th><th>描述</th><th>文件</th><th>操作</th></tr></thead><tbody id="memeRows"></tbody></table>
+    </div>
+    <div class="card"><h3>发一张</h3><div class="toolbar">目标 <input id="mSendPeer" size="12" placeholder="QQ号"> 场景 <select id="mSendScene"><option value="private">私聊</option><option value="group">群聊</option></select> 图库ID <input id="mSendId" size="8" placeholder="ID"><button class="act" onclick="sendMeme()">发送</button> <span id="sendMemeRet" class="r"></span></div></div>
+  </section>
 </main></div>
 
 <script>
@@ -237,6 +247,12 @@ async function likeTid(tid){const r=await api('/api/qzone/like',{method:'POST',h
 async function delTid(tid){if(!confirm('删除这条说说？'))return;const r=await api('/api/qzone/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tid})});alert(r.ok?'已删':('失败:'+(r.msg||'')))}
 async function webSearch(){const q=document.getElementById('webQ').value;if(!q)return;document.getElementById('webRet').textContent='搜索中…';const r=await api('/api/web/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});document.getElementById('webRet').textContent='';document.getElementById('webResults').innerHTML=(r.results||[]).map(x=>'<div style="margin:6px 0"><a href="'+x.url+'" target="_blank" class="k">'+x.title+'</a><div class="mini">'+x.snippet+'</div></div>').join('')||'无结果'}
 async function webImage(){const q=document.getElementById('webQ').value;if(!q)return;document.getElementById('webRet').textContent='找图中…';const r=await api('/api/web/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});document.getElementById('webRet').textContent='共 '+(r.images||[]).length+' 张';document.getElementById('webResults').innerHTML=(r.images||[]).map(u=>'<div class="mini">'+u+'</div>').join('')||'无图'}
+async function loadMemes(){const p=document.getElementById('mPack').value,t=document.getElementById('mTag').value,q=document.getElementById('mQ').value;const r=await api('/api/memes?pack='+encodeURIComponent(p)+'&tag='+encodeURIComponent(t)+'&q='+encodeURIComponent(q));document.getElementById('mInfo').textContent='共 '+(r.memes||[]).length+' 张';document.getElementById('memeRows').innerHTML=(r.memes||[]).map(m=>'<tr><td>'+m.id+'</td><td>'+m.pack+'</td><td><input id="mt_'+m.id+'" value="'+m.tag+'" size=6></td><td><input id="mc_'+m.id+'" value="'+(m.caption||'').replace(/"/g,'&quot;')+'" size=14></td><td class="mini">'+m.path.split('/').pop()+'</td><td><button class="act" onclick="saveMeme('+m.id+')">存</button><button class="act gray" onclick="document.getElementById(\'mSendId\').value='+m.id+'">选发</button><button class="act del" onclick="delMeme('+m.id+')">删</button></td></tr>').join('')||'<tr><td colspan=6 class=dim>图库为空，可导入或扫描</td></tr>'}
+async function scanMemes(){const r=await api('/api/memes/scan',{method:'POST'});document.getElementById('importRet').textContent='扫描后共 '+r.count+' 张';loadMemes()}
+async function importMeme(){const url=document.getElementById('mUrl').value,pack=document.getElementById('mNewPack').value||'import';if(!url)return;document.getElementById('importRet').textContent='导入中…';const r=await api('/api/memes/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,pack})});document.getElementById('importRet').textContent=r.ok?('导入 '+r.imported+' 张'):('失败:'+(r.msg||''));loadMemes()}
+async function delMeme(id){if(!confirm('删除这张？'))return;await api('/api/memes/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadMemes()}
+async function saveMeme(id){const tag=document.getElementById('mt_'+id).value,caption=document.getElementById('mc_'+id).value;await api('/api/memes/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,tag,caption})});loadMemes()}
+async function sendMeme(){const id=document.getElementById('mSendId').value,peer=document.getElementById('mSendPeer').value,scene=document.getElementById('mSendScene').value;const r=await api('/api/memes/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:parseInt(id),peer,scene})});document.getElementById('sendMemeRet').textContent=r.ok?'已发送':('失败:'+(r.msg||''))}
 async function loadSettings(){const m=await api('/api/model');document.getElementById('mBase').value=m.base;document.getElementById('mModel').value=m.model;document.getElementById('mKey').placeholder=m.key_set?'(已设置,留空不改)':'(未设置)';
  const s=await api('/api/settings');document.getElementById('proactiveBox').innerHTML='当前 <b class="'+(s.proactive?'ok':'bad')+'">'+(s.proactive?'开启':'关闭')+'</b> <button class="act" onclick="toggleProactive('+(s.proactive?'false':'true')+')">'+(s.proactive?'关闭':'开启')+'</button>';document.getElementById('settingsExtra').innerHTML='静默 '+s.quiet_start+'-'+s.quiet_end+' · 表情概率 '+s.emoji_prob+' · 表情包 '+s.sticker_count+' 张';
  const bs=await api('/api/backups');document.getElementById('baks').innerHTML='备份：'+((bs.backups||[]).map(b=>b.name+' ('+b.size_kb+'KB)').join(' · ')||'无');
@@ -247,8 +263,8 @@ async function toggleProactive(v){await api('/api/settings/proactive',{method:'P
 async function doBackup(){const r=await api('/api/backup',{method:'POST'});document.getElementById('bakRet').textContent=r.ok?('已备份 '+r.file):('失败 '+(r.error||''));loadSettings()}
 async function savePersona(){const text=document.getElementById('persona').value;const r=await api('/api/persona',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});document.getElementById('pRet').textContent=r.ok?'已保存':('失败')}
 async function doSend(){const scene=document.getElementById('sScene').value,peer=document.getElementById('sPeer').value,text=document.getElementById('sText').value,image_url=document.getElementById('sImg').value,voice_text=document.getElementById('sVoice').value,sticker=document.getElementById('sSticker').checked;const r=await api('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scene,peer,text,image_url,voice_text,sticker})});document.getElementById('sRet').textContent=JSON.stringify(r)}
-const TITLES={dash:'仪表盘',chat:'对话',facts:'记忆',modules:'模块',acl:'名单',logs:'日志',settings:'设置',send:'发送',emotions:'情绪',caps:'能力'};
-const loaders={dash:loadDash,chat:loadPeers,facts:loadFacts,modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings,emotions:loadEmotions,caps:loadCaps};
+const TITLES={dash:'仪表盘',chat:'对话',facts:'记忆',modules:'模块',acl:'名单',logs:'日志',settings:'设置',send:'发送',emotions:'情绪',caps:'能力',memes:'表情'};
+const loaders={dash:loadDash,chat:loadPeers,facts:loadFacts,modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings,emotions:loadEmotions,caps:loadCaps,memes:loadMemes};
 document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.page').forEach(t=>t.classList.remove('on'));document.getElementById('tab-'+b.dataset.tab).classList.add('on');document.getElementById('pageTitle').textContent=TITLES[b.dataset.tab]||'';if(loaders[b.dataset.tab])loaders[b.dataset.tab]()});
 setInterval(refreshStatus,3000);refreshStatus();loadDash();
 </script></body></html>'''
@@ -431,6 +447,8 @@ class Admin:
                     self._json(200, {"nickname": nick})
                 elif p == "/api/qzone/feeds":
                     self._json(200, {"feeds": actions.simplify_feeds(actions.qzone_feeds(admin.channel))})
+                elif p == "/api/memes":
+                    self._json(200, {"memes": admin.store.meme_list(q.get("pack", [""])[0] or None, q.get("tag", [""])[0] or None, q.get("q", [""])[0] or None)})
                 elif p == "/api/model":
                     llm = admin.brain.llm
                     self._json(200, {"base": getattr(llm, "base", ""), "model": getattr(llm, "model", ""), "key_set": bool(getattr(llm, "key", ""))})
@@ -492,6 +510,31 @@ class Admin:
                     self._json(200, {"results": webmod.search(str(d.get("q", "")), 6)})
                 elif p == "/api/web/image":
                     self._json(200, {"images": webmod.image_search(str(d.get("q", "")), 8)})
+                elif p == "/api/memes/scan":
+                    n = mememod.scan(admin.store, getattr(admin.cfg, "meme_dir", "data/memes"))
+                    self._json(200, {"ok": True, "count": n})
+                elif p == "/api/memes/import":
+                    try:
+                        n = mememod.import_zip(admin.store, str(d.get("url", "")),
+                                               getattr(admin.cfg, "meme_dir", "data/memes"),
+                                               str(d.get("pack", "import") or "import"))
+                        self._json(200, {"ok": True, "imported": n})
+                    except Exception as e:
+                        self._json(200, {"ok": False, "msg": str(e)[:160]})
+                elif p == "/api/memes/delete":
+                    admin.store.meme_delete(int(d.get("id", 0))); self._json(200, {"ok": True})
+                elif p == "/api/memes/update":
+                    admin.store.meme_update(int(d.get("id", 0)), d.get("tag"), d.get("caption"), d.get("keywords"))
+                    self._json(200, {"ok": True})
+                elif p == "/api/memes/send":
+                    m = admin.store.meme_get(int(d.get("id", 0)))
+                    if not m or not os.path.exists(m["path"]):
+                        self._json(200, {"ok": False, "msg": "无此图"})
+                    else:
+                        b64 = base64.b64encode(open(m["path"], "rb").read()).decode()
+                        ok = admin.channel.send(Outbound(d.get("scene", "private"), str(d.get("peer", "")),
+                                                         [Segment("image", {"file": "base64://" + b64})]))
+                        self._json(200, {"ok": bool(ok)})
                 elif p == "/api/facts/add":
                     admin.store.add_fact(str(d.get("peer", "")), str(d.get("k", "")), str(d.get("v", "")), 1.0, "manual"); self._json(200, {"ok": True})
                 elif p == "/api/facts/delete":

@@ -28,6 +28,7 @@ class Config:
     quiet_end: str
     emoji_prob: float
     sticker_dir: str
+    meme_dir: str
 
 
 def _root() -> str:
@@ -54,4 +55,5 @@ def load() -> Config:
         quiet_end=os.getenv("QUIET_END", "08:00"),
         emoji_prob=float(os.getenv("EMOJI_PROB", "0.18")),
         sticker_dir=os.getenv("STICKER_DIR", os.path.join(data_dir, "stickers")),
+        meme_dir=os.getenv("MEME_DIR", os.path.join(data_dir, "memes")),
     )

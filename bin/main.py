@@ -34,6 +34,15 @@ def main() -> int:
     brain = Brain(llm=LLMClient(cfg.llm_base, cfg.llm_key, cfg.llm_model),
                   persona=persona_mod.load(cfg.persona_file), store=store,
                   emoji_prob=cfg.emoji_prob, sticker_dir=cfg.sticker_dir, persona_file=cfg.persona_file)
+    brain.meme_dir = cfg.meme_dir
+    try:
+        from qqbot import meme as mememod
+        if mememod.count(store) == 0:
+            mememod.seed_from_dir(store, cfg.sticker_dir, cfg.meme_dir, pack="default")
+        mememod.scan(store, cfg.meme_dir)
+        print(f"[meme] library count={mememod.count(store)}", flush=True)
+    except Exception as e:
+        print("[meme] init skip:", repr(e), flush=True)
 
     if cfg.channel == "mock":
         from qqbot.channels.mock import run_demo

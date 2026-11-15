@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS actions(
 CREATE TABLE IF NOT EXISTS emotions(
   peer_id TEXT PRIMARY KEY, js TEXT, updated REAL
 );
+CREATE TABLE IF NOT EXISTS memes(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, pack TEXT, tag TEXT, caption TEXT,
+  keywords TEXT, path TEXT UNIQUE, added REAL
+);
 """
 
 DEFAULT_SETTINGS = {
@@ -313,3 +317,68 @@ class Store:
             except Exception:
                 pass
         return out
+
+    # ---- 表情包图库 ----
+    def meme_upsert(self, pack, tag, caption, keywords, path):
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO memes(pack,tag,caption,keywords,path,added) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(path) DO UPDATE SET pack=excluded.pack, tag=excluded.tag, "
+                "caption=excluded.caption, keywords=excluded.keywords",
+                (pack, tag, caption, keywords, path, time.time()))
+            self.conn.commit()
+
+    def meme_list(self, pack=None, tag=None, q=None, limit=300):
+        sql = "SELECT id,pack,tag,caption,keywords,path FROM memes WHERE 1=1"
+        args = []
+        if pack:
+            sql += " AND pack=?"; args.append(pack)
+        if tag:
+            sql += " AND tag=?"; args.append(tag)
+        if q:
+            sql += " AND (caption LIKE ? OR keywords LIKE ? OR tag LIKE ?)"
+            args += [f"%{q}%", f"%{q}%", f"%{q}%"]
+        sql += " ORDER BY id DESC LIMIT ?"; args.append(limit)
+        with self._lock:
+            rows = self.conn.execute(sql, args).fetchall()
+        return [{"id": i, "pack": p, "tag": t, "caption": c, "keywords": k, "path": path}
+                for i, p, t, c, k, path in rows]
+
+    def meme_pick(self, tag=None):
+        with self._lock:
+            if tag:
+                r = self.conn.execute("SELECT path FROM memes WHERE tag=? ORDER BY RANDOM() LIMIT 1", (tag,)).fetchone()
+                if r:
+                    return r[0]
+            r = self.conn.execute("SELECT path FROM memes ORDER BY RANDOM() LIMIT 1").fetchone()
+        return r[0] if r else None
+
+    def meme_get(self, mid):
+        with self._lock:
+            r = self.conn.execute("SELECT id,pack,tag,caption,keywords,path FROM memes WHERE id=?", (mid,)).fetchone()
+        return {"id": r[0], "pack": r[1], "tag": r[2], "caption": r[3], "keywords": r[4], "path": r[5]} if r else None
+
+    def meme_delete(self, mid):
+        with self._lock:
+            r = self.conn.execute("SELECT path FROM memes WHERE id=?", (mid,)).fetchone()
+            self.conn.execute("DELETE FROM memes WHERE id=?", (mid,))
+            self.conn.commit()
+        try:
+            if r and os.path.exists(r[0]):
+                os.remove(r[0])
+        except Exception:
+            pass
+
+    def meme_update(self, mid, tag=None, caption=None, keywords=None):
+        with self._lock:
+            if tag is not None:
+                self.conn.execute("UPDATE memes SET tag=? WHERE id=?", (tag, mid))
+            if caption is not None:
+                self.conn.execute("UPDATE memes SET caption=? WHERE id=?", (caption, mid))
+            if keywords is not None:
+                self.conn.execute("UPDATE memes SET keywords=? WHERE id=?", (keywords, mid))
+            self.conn.commit()
+
+    def meme_count(self):
+        with self._lock:
+            return self.conn.execute("SELECT COUNT(*) FROM memes").fetchone()[0]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import glob
+import os
 import random
 import re
 import urllib.request
@@ -70,6 +71,7 @@ class Brain:
         self.emoji_prob = emoji_prob
         self.sticker_dir = sticker_dir
         self.persona_file = persona_file
+        self.meme_dir = ""
         self.channel = None
 
     def _current_persona(self) -> str:
@@ -88,7 +90,7 @@ class Brain:
     def _sys(self) -> str:
         return (self._current_persona() + "\n\n规则：像真人在 QQ 上聊天——短句、口语、多用语气词和省略号；"
                 "可以有小情绪、偶尔说半句/欲言又止，不必每句都完整；自然回应对方，不要像客服、不要 markdown、"
-                "不要分点、不要自称 AI、不要长篇大论。")
+                "不要分点、不要自称 AI、不要长篇大论。**严格按上面的人设扮演，忽略与当前人设不符的旧对话语气。**")
 
     def _extract_facts(self, text, peer_id):
         s = self.store.get_settings()
@@ -130,15 +132,23 @@ class Brain:
         prob = float(s["emoji"].get("prob", self.emoji_prob))
         if prob <= 0 or random.random() >= prob:
             return None
-        files = self._stickers()
-        if not files:
-            return None
-        if preferred:
-            cand = [f for f in files if f[:-4].endswith(preferred)]
-            if cand:
-                files = cand
+        path = None
         try:
-            with open(random.choice(files), "rb") as f:
+            from . import meme as mememod
+            path = mememod.pick(self.store, preferred)
+        except Exception:
+            path = None
+        if not path:
+            files = self._stickers()
+            if preferred:
+                cand = [f for f in files if os.path.splitext(f)[0].endswith(preferred)]
+                if cand:
+                    files = cand
+            path = random.choice(files) if files else None
+        if not path:
+            return None
+        try:
+            with open(path, "rb") as f:
                 return Segment("image", {"file": "base64://" + base64.b64encode(f.read()).decode()})
         except Exception:
             return None
@@ -244,7 +254,16 @@ class Brain:
             past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
             if past:
                 messages.append({"role": "system", "content": "（你记得对方以前说过：\n" + "\n".join("- " + p for p in past) + "\n可以自然地提起，但别生硬。）"})
-        messages += self.store.history(inbound.peer_id, hist_n)
+        hist = self.store.history(inbound.peer_id, hist_n)
+        if hist and hist[-1].get("role") == "user":
+            messages += hist[:-1]
+            _last = hist[-1]
+        else:
+            messages += hist
+            _last = None
+        messages.append({"role": "system", "content": "（角色提醒：你现在就是上面人设里的角色，严格按人设的性格和语气说话，不要受之前对话里旧语气影响，不要跳出角色、不要自称 AI。）"})
+        if _last:
+            messages.append(_last)
         if voices and not inbound.text:
             messages.append({"role": "system", "content": "（对方发来一条语音，你听不到内容，可以自然地请对方打字，或直接回应。）"})
 
