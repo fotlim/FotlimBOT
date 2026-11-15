@@ -199,10 +199,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
       <div class="toolbar"><button class="act gray" onclick="loadFeeds()">拉取好友动态</button><span class="mini">点「赞」给好友说说点赞</span></div>
       <table><thead><tr><th>昵称</th><th>内容</th><th>tid</th><th>操作</th></tr></thead><tbody id="feedRows"></tbody></table>
     </div>
-    <div class="card"><h3>④ 联网检索（Bing）</h3>
-      <div class="toolbar">关键词 <input id="webQ" size="28" placeholder="如：北京天气 / 可爱猫咪"><button class="act" onclick="webSearch()">搜网页</button><button class="act gray" onclick="webImage()">找图</button> <span id="webRet" class="r"></span></div>
-      <div id="webResults" class="mini"></div>
-    </div>
+    <div class="card"><h3>AstrBot 插件（简单指令/回复类）</h3><div id="astrRows" class="mini">加载中…</div><div class="mini" style="margin-top:6px">把插件放到 <code>data/astrbot_plugins/&lt;名字&gt;/main.py</code>，重启加载。仅支持纯指令/回复类插件，依赖 LLM Provider/DB/WebUI 的复杂插件不支持。</div></div>
   </section>
   <section id="tab-memes" class="page">
     <div class="card"><h3>表情包图库</h3>
@@ -254,7 +251,7 @@ async function loadLogs(){const l=await api('/api/logs');const box=document.getE
 function setLogSize(v){localStorage.setItem('logSize',String(v));document.getElementById('logbox').style.fontSize=v+'px'}
 async function loadEmotions(){const e=await api('/api/emotions');document.getElementById('emoRows').innerHTML=(e.emotions||[]).map(x=>'<tr><td>'+x.peer_id+'</td><td><span class=tag>'+x.mood+'</span></td><td>'+x.affinity+'</td><td>'+x.p+'</td><td>'+x.a+'</td><td>'+x.d+'</td><td>'+x.energy+'</td><td><button class="act lock" onclick="document.getElementById(\'ePeer\').value=\''+x.peer_id+'\';document.getElementById(\'eAff\').value=\''+x.affinity+'\'">选中</button></td></tr>').join('')||'<tr><td colspan=8 class=dim>暂无情绪记录（聊两句就有了）</td></tr>'}
 async function setEmotion(){const peer=document.getElementById('ePeer').value,mood=document.getElementById('eMood').value,aff=document.getElementById('eAff').value;if(!peer)return;const body={peer};if(mood)body.mood=mood;if(aff!=='')body.affinity=parseFloat(aff);const r=await api('/api/emotion/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});document.getElementById('eRet').textContent=r.ok?'已更新':'失败';loadEmotions()}
-async function loadCaps(){try{const r=await api('/api/cap/whoami');if(r&&r.nickname)document.getElementById('curNick').textContent=r.nickname}catch(e){}}
+async function loadCaps(){try{const r=await api('/api/cap/whoami');if(r&&r.nickname)document.getElementById('curNick').textContent=r.nickname}catch(e){}try{const p=await api('/api/plugins');document.getElementById('astrRows').innerHTML=(p.plugins||[]).map(m=>'<div>· '+(m.name||'?')+' v'+(m.version||'')+' — '+(m.desc||'')+'</div>').join('')||'（暂无插件）'}catch(e){}}
 async function doNick(){const nickname=document.getElementById('capNick').value;if(!nickname)return;const r=await api('/api/cap/nickname',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nickname})});document.getElementById('capRet').textContent=r.ok?'已改':'失败';loadCaps()}
 async function doSign(){const text=document.getElementById('capSign').value;if(!text)return;const r=await api('/api/cap/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});document.getElementById('capRet').textContent=r.ok?'已改':'失败'}
 async function doAvatar(){const file=document.getElementById('capAvatar').value;if(!file)return;const r=await api('/api/cap/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file})});document.getElementById('avatarRet').textContent=r.ok?'已提交':('失败:'+(r.msg||''))}
@@ -465,6 +462,9 @@ class Admin:
                                      "analysis": profilemod.read_analysis(getattr(admin.cfg, "memory_dir", ""), q.get("scene",[""])[0], q.get("peer",[""])[0], q.get("nick",[""])[0])})
                 elif p == "/api/actions": self._json(200, {"actions": admin.store.actions_recent(50)})
                 elif p == "/api/modules": self._json(200, {"modules": admin._modules()})
+                elif p == "/api/plugins":
+                    host = getattr(admin.channel, "host", None)
+                    self._json(200, {"plugins": host.list() if host is not None else []})
                 elif p == "/api/acl": self._json(200, {"white": admin.store.kv_list_get("acl:white"), "black": admin.store.kv_list_get("acl:black")})
                 elif p == "/api/logs": self._json(200, {"lines": logbus.lines(300)})
                 elif p == "/api/emotions": self._json(200, {"emotions": emotion.snapshot(admin.store, admin.store.get_settings())})

@@ -30,6 +30,7 @@ class Config:
     sticker_dir: str
     meme_dir: str
     memory_dir: str
+    plugins_dir: str
 
 
 def _root() -> str:
@@ -58,4 +59,5 @@ def load() -> Config:
         sticker_dir=os.getenv("STICKER_DIR", os.path.join(data_dir, "stickers")),
         meme_dir=os.getenv("MEME_DIR", os.path.join(data_dir, "memes")),
         memory_dir=os.getenv("MEMORY_DIR", os.path.join(data_dir, "memory", "人物分析")),
+        plugins_dir=os.getenv("PLUGINS_DIR", os.path.join(data_dir, "astrbot_plugins")),
     )

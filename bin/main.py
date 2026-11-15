@@ -72,6 +72,14 @@ def main() -> int:
     if cfg.channel == "onebot11":
         from qqbot.channels.onebot11 import OneBot11Channel
         ch = OneBot11Channel(cfg.onebot_ws)
+        try:
+            from qqbot.astrbot_host import AstrBotHost
+            _sample = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "astrbot_plugins")
+            _host = AstrBotHost(cfg.plugins_dir, _sample)
+            _host.load()
+            ch.host = _host
+        except Exception as e:
+            print("[astr] host skip:", repr(e), flush=True)
         brain.channel = ch
         ch.store = store
         sched = Scheduler(brain, ch, store, cfg)

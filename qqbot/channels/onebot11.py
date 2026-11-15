@@ -71,6 +71,7 @@ class OneBot11Channel:
         self._pend_lock = threading.Lock()
         self._seq = itertools.count(1)
         self.store = None
+        self.host = None
 
     def _send_one(self, out: Outbound, seg) -> None:
         msg = _build_message(Outbound(out.scene, out.peer_id, [seg]))
@@ -152,6 +153,19 @@ class OneBot11Channel:
 
     def _handle(self, inbound, brain: Brain) -> None:
         try:
+            host = getattr(self, "host", None)
+            if host is not None:
+                r = host.try_handle(inbound)
+                if r is not None:
+                    chain, _meta = r
+                    if chain:
+                        from ..astrbot_host import _segments_from_chain
+                        segs = _segments_from_chain(chain)
+                        if segs:
+                            self.send(Outbound(inbound.scene, inbound.peer_id, segs,
+                                               reply_to=inbound.message_id or None))
+                            log_print(f"[onebot11] plugin replied {inbound.scene}:{inbound.peer_id}")
+                            return
             out = brain.respond(inbound, CAPS)
             if out is not None and self.send(out):
                 log_print(f"[onebot11] replied {inbound.scene}:{inbound.peer_id}")
