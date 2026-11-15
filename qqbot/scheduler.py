@@ -129,8 +129,8 @@ class Scheduler:
                 try:
                     _p = self.brain._current_persona()[:900]
                     nn = self.brain.llm.chat(
-                        [{"role": "system", "content": "这是你的角色人设，请给自己起一个【完全符合该人设】的 QQ 昵称（贴合角色身份与气质，6 字以内），只输出昵称本身，不要引号不要解释：\n" + _p},
-                         {"role": "user", "content": "起个符合人设的新昵称"}], max_tokens=40, reasoning="low")
+                        [{"role": "system", "content": "根据下面这个角色的【性格特点与气质】，给自己起一个有意思的网名/QQ昵称。可以创意发挥，不一定要用角色原名；6~10字，贴合性格，只输出昵称本身，不要引号不要解释：\n" + _p},
+                         {"role": "user", "content": "起个符合我性格的网名"}], max_tokens=40, reasoning="low")
                 except Exception:
                     nn = ""
                 nick = (nn or "").strip().replace('"', "").splitlines()[0][:16] if (nn or "").strip() else ""
