@@ -128,10 +128,14 @@ class Scheduler:
                 try:
                     nn = self.brain.llm.chat(
                         [{"role": "system", "content": "给角色起一个简短的QQ昵称，6字以内，贴合心情，只输出昵称本身，不要引号不要解释"},
-                         {"role": "user", "content": "心情：平静，想换个新名字"}], max_tokens=24, reasoning="none")
+                         {"role": "user", "content": "心情：平静，想换个新名字"}], max_tokens=40, reasoning="low")
                 except Exception:
                     nn = ""
-                nick = (nn or "").strip().splitlines()[0][:20] if (nn or "").strip() else "FotlimBOT"
+                nick = (nn or "").strip().replace('"', "").splitlines()[0][:20] if (nn or "").strip() else ""
+                if not nick:
+                    import random as _rnd
+                    nick = _rnd.choice(["薄荷汽水", "今天也开心", "软软一条鱼", "不想上班", "晴天小满",
+                                        "晚风与猫", "咕噜咕噜", "阿呆本呆", "月亮邮差", "偷吃 token 的鱼"])
                 r = actions.set_nickname(self.channel, nick)
                 ok = bool(r and r.get("status") == "ok")
                 detail = "改昵称为 " + nick
