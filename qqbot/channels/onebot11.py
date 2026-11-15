@@ -72,6 +72,46 @@ class OneBot11Channel:
         self._seq = itertools.count(1)
         self.store = None
         self.host = None
+        self._uin2 = ""
+        self._nick2 = ""
+        self._id_ts = 0.0
+
+    def _bot_identity(self):
+        now = time.time()
+        if getattr(self, "_id_ts", 0) and now - self._id_ts < 300:
+            return self._uin2, self._nick2
+        uin = ""
+        nick = ""
+        try:
+            r = self.call_action("get_login_info", {}, timeout=5)
+            d = (r or {}).get("data") or {}
+            uin = str(d.get("user_id", "") or "")
+            nick = d.get("nickname", "") or ""
+        except Exception:
+            pass
+        self._uin2 = uin
+        self._nick2 = nick
+        self._id_ts = now
+        return uin, nick
+
+    def _addressed(self, inbound, brain) -> bool:
+        if inbound.scene != "group":
+            return True
+        uin, nick = self._bot_identity()
+        for s in inbound.segments:
+            if s.type == "at" and str(s.data.get("uid", "")).split("_")[-1] == str(uin):
+                return True
+        txt = inbound.text or ""
+        if txt.strip().startswith("/"):
+            return True
+        names = [nick]
+        try:
+            names.append(brain._self_name())
+        except Exception:
+            pass
+        if any(n and n in txt for n in names):
+            return True
+        return False
 
     def _send_one(self, out: Outbound, seg) -> None:
         msg = _build_message(Outbound(out.scene, out.peer_id, [seg]))
@@ -153,6 +193,20 @@ class OneBot11Channel:
 
     def _handle(self, inbound, brain: Brain) -> None:
         try:
+            obs = {}
+            try:
+                if self.store is not None:
+                    obs = self.store.get_settings().get("observe", {}) or {}
+            except Exception:
+                obs = {}
+            if inbound.scene == "group" and obs.get("enabled", True) and not self._addressed(inbound, brain):
+                if obs.get("learn", True):
+                    try:
+                        from .. import observe as obsmod
+                        obsmod.learn(self.store, inbound.peer_id, inbound.text)
+                    except Exception:
+                        pass
+                return
             host = getattr(self, "host", None)
             if host is not None:
                 r = host.try_handle(inbound)
@@ -194,6 +248,8 @@ class OneBot11Channel:
                         continue
                     inbound = _to_inbound(ev)
                     if inbound is None:
+                        continue
+                    if inbound.sender_id and inbound.sender_id == self._bot_identity()[0]:
                         continue
                     self._pool.submit(self._handle, inbound, brain)
             except Exception as e:

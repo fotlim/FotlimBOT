@@ -57,6 +57,7 @@ DEFAULT_SETTINGS = {
     "web": {"enabled": True, "max_results": 5, "allow_image": True},
     "security": {"persona_lock": True, "block_jailbreak": True},
     "owner": {"ids": ["3565486206"]},
+    "observe": {"enabled": True, "learn": True},
 }
 
 

@@ -338,6 +338,14 @@ class Brain:
             messages.append({"role": "system", "content": emotion.prompt(emo, scene=inbound.scene, settings=st)})
         elif inbound.scene == "group":
             messages.append({"role": "system", "content": "（这是群聊：你和对方只是普通朋友/群友，保持分寸礼貌，不要暧昧、撒娇过度或表达超出朋友的亲密。）"})
+        if inbound.scene == "group":
+            try:
+                from . import observe as obsmod
+                _sty = obsmod.context(self.store, inbound.peer_id, 10)
+                if _sty:
+                    messages.append({"role": "system", "content": _sty})
+            except Exception:
+                pass
         if use_mem:
             try:
                 _sm = self.store.summary_get(inbound.peer_id)
