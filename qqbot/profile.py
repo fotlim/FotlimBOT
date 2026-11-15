@@ -102,7 +102,8 @@ def clear_peer(base: str, peer: str) -> None:
 def list_profiles(base: str) -> list[dict]:
     out = []
     if not os.path.isdir(base):
-        return out    for fn in os.listdir(base):
+        return out
+    for fn in os.listdir(base):
         if not fn.endswith(".txt") or fn.endswith(".analysis.txt"):
             continue
         stem = fn[:-4]
