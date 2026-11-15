@@ -19,6 +19,7 @@ from . import emotion
 from . import actions
 from . import web as webmod
 from . import meme as mememod
+from . import profile as profilemod
 
 
 _HTML = r'''<!doctype html><html lang="zh"><head><meta charset="utf-8">
@@ -137,6 +138,10 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
       <h3>事实记忆</h3>
       <div class="toolbar">新增：<input id="fPeer" placeholder="QQ/peer" size="12"><input id="fK" placeholder="类别(称呼/喜欢…)" size="12"><input id="fV" placeholder="内容" size="22"><button class="act" onclick="addFact()">+ 添加</button></div>
       <table><thead><tr><th>对象</th><th>类别</th><th>内容</th><th>置信</th><th>操作</th></tr></thead><tbody id="factRows"></tbody></table>
+    </div>
+    <div class="card"><h3>人物分析（按群/对话 + 昵称存档发言并分析性格）</h3>
+      <div class="toolbar"><button class="act gray" onclick="loadProfiles()">刷新列表</button> <span class="mini" id="profInfo"></span></div>
+      <table><thead><tr><th>场景</th><th>对象</th><th>昵称</th><th>发言数</th><th>分析摘要</th><th>操作</th></tr></thead><tbody id="profRows"></tbody></table>
     </div>
   </section>
 
@@ -268,6 +273,8 @@ async function loadVoices(){const r=await api('/api/voices');document.getElement
 async function previewVoice(name){const text=document.getElementById('vText').value;const r=await api('/api/voice/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:name,text})});if(r.ok&&r.audio){const a=document.getElementById('vAudio');a.src='data:audio/mp3;base64,'+r.audio;a.play()}else alert('试听失败:'+(r.msg||''))}
 async function selectVoice(name){await api('/api/voice/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:name})});document.getElementById('curVoice').textContent=name}
 async function runAutonomy(){const r=await api('/api/autonomy/run',{method:'POST'});document.getElementById('modRet').textContent=r.ok?('自主行为：'+(r.act||'')+' '+(r.detail||'')):('未执行：'+(r.detail||''))}
+async function loadProfiles(){const r=await api('/api/profiles');document.getElementById('profInfo').textContent='共 '+(r.profiles||[]).length+' 人';document.getElementById('profRows').innerHTML=(r.profiles||[]).map(p=>'<tr><td>'+p.scene+'</td><td>'+p.peer+'</td><td>'+p.nickname+'</td><td>'+p.lines+'</td><td class="mini">'+(p.analysis||'').replace(/</g,'&lt;').slice(0,90)+'</td><td><button class="act" onclick="analyzeProfile(\''+p.scene+'\',\''+p.peer+'\',\''+p.nickname.replace(/'/g,'')+'\')">生成分析</button></td></tr>').join('')||'<tr><td colspan=6 class=dim>暂无人物档案（聊几句就自动存档）</td></tr>'}
+async function analyzeProfile(scene,peer,nickname){const r=await api('/api/profile/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scene,peer,nickname})});if(r.ok){alert('分析完成：\\n'+(r.analysis||''))}else{alert('失败:'+(r.msg||''))}loadProfiles()}
 async function loadSettings(){const m=await api('/api/model');document.getElementById('mBase').value=m.base;document.getElementById('mModel').value=m.model;document.getElementById('mKey').placeholder=m.key_set?'(已设置,留空不改)':'(未设置)';
  const s=await api('/api/settings');document.getElementById('proactiveBox').innerHTML='当前 <b class="'+(s.proactive?'ok':'bad')+'">'+(s.proactive?'开启':'关闭')+'</b> <button class="act" onclick="toggleProactive('+(s.proactive?'false':'true')+')">'+(s.proactive?'关闭':'开启')+'</button>';document.getElementById('settingsExtra').innerHTML='静默 '+s.quiet_start+'-'+s.quiet_end+' · 表情概率 '+s.emoji_prob+' · 表情包 '+s.sticker_count+' 张';
  const bs=await api('/api/backups');document.getElementById('baks').innerHTML='备份：'+((bs.backups||[]).map(b=>b.name+' ('+b.size_kb+'KB)').join(' · ')||'无');
@@ -279,7 +286,7 @@ async function doBackup(){const r=await api('/api/backup',{method:'POST'});docum
 async function savePersona(){const text=document.getElementById('persona').value;const r=await api('/api/persona',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});document.getElementById('pRet').textContent=r.ok?'已保存':('失败')}
 async function doSend(){const scene=document.getElementById('sScene').value,peer=document.getElementById('sPeer').value,text=document.getElementById('sText').value,image_url=document.getElementById('sImg').value,voice_text=document.getElementById('sVoice').value,sticker=document.getElementById('sSticker').checked;const r=await api('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scene,peer,text,image_url,voice_text,sticker})});document.getElementById('sRet').textContent=JSON.stringify(r)}
 const TITLES={dash:'仪表盘',chat:'对话',facts:'记忆',modules:'模块',acl:'名单',logs:'日志',settings:'设置',send:'发送',emotions:'情绪',caps:'能力',memes:'表情',voice:'音色'};
-const loaders={dash:loadDash,chat:loadPeers,facts:loadFacts,modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings,emotions:loadEmotions,caps:loadCaps,memes:loadMemes,voice:loadVoices};
+const loaders={dash:loadDash,chat:loadPeers,facts:()=>{loadFacts();loadProfiles();},modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings,emotions:loadEmotions,caps:loadCaps,memes:loadMemes,voice:loadVoices};
 document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.page').forEach(t=>t.classList.remove('on'));document.getElementById('tab-'+b.dataset.tab).classList.add('on');document.getElementById('pageTitle').textContent=TITLES[b.dataset.tab]||'';if(loaders[b.dataset.tab])loaders[b.dataset.tab]()});
 setInterval(refreshStatus,3000);refreshStatus();loadDash();
 </script></body></html>'''
@@ -451,6 +458,10 @@ class Admin:
                     txt = "\n".join(f"[{time.strftime('%Y-%m-%d %H:%M', time.localtime(r['ts']))}] {r['role']}: {r['content']}" for r in rows)
                     self._text(200, txt or "（无记录）", f"chat-{peer}.txt")
                 elif p == "/api/facts": self._json(200, {"facts": admin.store.all_facts()})
+                elif p == "/api/profiles": self._json(200, {"profiles": profilemod.list_profiles(getattr(admin.cfg, "memory_dir", ""))})
+                elif p == "/api/profile":
+                    self._json(200, {"speech": profilemod.read_speech(getattr(admin.cfg, "memory_dir", ""), q.get("scene",[""])[0], q.get("peer",[""])[0], q.get("nick",[""])[0]),
+                                     "analysis": profilemod.read_analysis(getattr(admin.cfg, "memory_dir", ""), q.get("scene",[""])[0], q.get("peer",[""])[0], q.get("nick",[""])[0])})
                 elif p == "/api/actions": self._json(200, {"actions": admin.store.actions_recent(50)})
                 elif p == "/api/modules": self._json(200, {"modules": admin._modules()})
                 elif p == "/api/acl": self._json(200, {"white": admin.store.kv_list_get("acl:white"), "black": admin.store.kv_list_get("acl:black")})
@@ -563,6 +574,10 @@ class Admin:
                     if vname:
                         admin.store.set_settings({"voice": {"voice": vname}})
                     self._json(200, {"ok": bool(vname)})
+                elif p == "/api/profile/analyze":
+                    ana = profilemod.analyze(getattr(admin.cfg, "memory_dir", ""), str(d.get("scene","")),
+                                             str(d.get("peer","")), str(d.get("nickname","")), admin.brain.llm)
+                    self._json(200, ({"ok": True, "analysis": ana} if ana else {"ok": False, "msg": "暂无可分析的发言或分析失败"}))
                 elif p == "/api/facts/add":
                     admin.store.add_fact(str(d.get("peer", "")), str(d.get("k", "")), str(d.get("v", "")), 1.0, "manual"); self._json(200, {"ok": True})
                 elif p == "/api/facts/delete":

@@ -72,6 +72,7 @@ class Brain:
         self.sticker_dir = sticker_dir
         self.persona_file = persona_file
         self.meme_dir = ""
+        self.memory_dir = ""
         self.channel = None
 
     def _current_persona(self) -> str:
@@ -113,6 +114,13 @@ class Brain:
                                content=content, msg_id=inbound.message_id,
                                meta={"segments": [s.type for s in inbound.segments]})
         self._extract_facts(inbound.text, inbound.peer_id)
+        if inbound.text:
+            try:
+                from . import profile as profilemod
+                profilemod.append_speech(getattr(self, "memory_dir", ""), inbound.scene,
+                                         inbound.peer_id, inbound.sender_name, inbound.text)
+            except Exception:
+                pass
 
     def _facts_block(self, peer_id):
         if not self.store.get_settings()["memory"]["enabled"]:
@@ -250,6 +258,18 @@ class Brain:
             messages.append({"role": "system", "content": fb})
         if web_ctx:
             messages.append({"role": "system", "content": web_ctx})
+        if st.get("profile", {}).get("enabled", True):
+            try:
+                from . import profile as profilemod
+                _base = getattr(self, "memory_dir", "")
+                _ana = profilemod.read_analysis(_base, inbound.scene, inbound.peer_id, inbound.sender_name)
+                _samp = "" if _ana else profilemod.read_speech(_base, inbound.scene, inbound.peer_id, inbound.sender_name, 300)
+                if _ana or _samp:
+                    _who = inbound.sender_name or inbound.peer_id
+                    _ctx = _ana[:400] if _ana else ("ta 平时这样说：" + _samp[-280:])
+                    messages.append({"role": "system", "content": "（你了解对方「" + _who + "」：" + _ctx + "。回复时贴合 ta 的性格和说话方式，但别点破你在分析 ta。）"})
+            except Exception:
+                pass
         if inbound.text and use_mem:
             past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
             if past:

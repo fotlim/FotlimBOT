@@ -35,6 +35,7 @@ def main() -> int:
                   persona=persona_mod.load(cfg.persona_file), store=store,
                   emoji_prob=cfg.emoji_prob, sticker_dir=cfg.sticker_dir, persona_file=cfg.persona_file)
     brain.meme_dir = cfg.meme_dir
+    brain.memory_dir = cfg.memory_dir
     try:
         from qqbot import meme as mememod
         if mememod.count(store) == 0:
@@ -43,6 +44,18 @@ def main() -> int:
         print(f"[meme] library count={mememod.count(store)}", flush=True)
     except Exception as e:
         print("[meme] init skip:", repr(e), flush=True)
+    try:
+        from qqbot import profile as profilemod
+        if not profilemod.list_profiles(cfg.memory_dir):
+            for _p in store.peers_with_stats():
+                for _m in store.messages_for_peer(_p["peer_id"], 500):
+                    if _m.get("role") == "user":
+                        profilemod.append_speech(cfg.memory_dir, _p.get("scene") or "private",
+                                                 _p["peer_id"], _m.get("name") or _p["peer_id"],
+                                                 _m.get("content", ""), _m.get("ts"))
+            print(f"[profile] backfilled {len(profilemod.list_profiles(cfg.memory_dir))}", flush=True)
+    except Exception as e:
+        print("[profile] backfill skip:", repr(e), flush=True)
 
     if cfg.channel == "mock":
         from qqbot.channels.mock import run_demo

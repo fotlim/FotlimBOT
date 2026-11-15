@@ -49,6 +49,7 @@ DEFAULT_SETTINGS = {
     "humanize": {"enabled": True, "read_min_ms": 600, "read_max_ms": 1600, "per_char_ms": 35,
                  "bubble_gap_min_ms": 500, "bubble_gap_max_ms": 1400},
     "web": {"enabled": True, "max_results": 5, "allow_image": True},
+    "profile": {"enabled": True},
 }
 
 

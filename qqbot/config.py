@@ -29,6 +29,7 @@ class Config:
     emoji_prob: float
     sticker_dir: str
     meme_dir: str
+    memory_dir: str
 
 
 def _root() -> str:
@@ -56,4 +57,5 @@ def load() -> Config:
         emoji_prob=float(os.getenv("EMOJI_PROB", "0.18")),
         sticker_dir=os.getenv("STICKER_DIR", os.path.join(data_dir, "stickers")),
         meme_dir=os.getenv("MEME_DIR", os.path.join(data_dir, "memes")),
+        memory_dir=os.getenv("MEMORY_DIR", os.path.join(data_dir, "memory", "人物分析")),
     )
