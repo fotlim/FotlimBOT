@@ -134,6 +134,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
         <span class="mini">共 <span id="peerCnt">0</span> 人</span>
         <button class="act gray" onclick="exportPeer()">导出</button>
         <button class="act del" onclick="delPeer()">删除对话</button>
+        <button class="act del" onclick="clearAll()">清空全部对话</button>
       </div>
       <div id="msgs" class="chatbox"></div>
     </div>
@@ -261,6 +262,7 @@ async function loadPeers(){const ps=await api('/api/peers');const sel=document.g
 async function loadMsgs(){const peer=document.getElementById('peerSel').value;if(!peer)return;const m=await api('/api/messages?peer='+encodeURIComponent(peer));document.getElementById('msgs').innerHTML=m.messages.map(x=>'<div class="msgrow '+(x.role==='assistant'?'right':'left')+'"><div class="bubble '+(x.role==='assistant'?'bot':'me')+'"><div class="mini">'+fmt(x.ts)+(x.role==='assistant'?' · FotlimBOT':(' · '+(x.name||x.role)))+'</div>'+x.content+'</div></div>').join('')}
 function exportPeer(){const peer=document.getElementById('peerSel').value;if(!peer)return;window.open('/api/export?peer='+encodeURIComponent(peer)+'&token='+encodeURIComponent(T),'_blank')}
 async function delPeer(){const peer=document.getElementById('peerSel').value;if(!peer||!confirm('删除 '+peer+' 的对话记录？'))return;await api('/api/peer/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer})});loadPeers()}
+async function clearAll(){if(!confirm('清空全部对话历史/摘要/向量/人物档案（记忆清空，不可恢复）？'))return;const r=await api('/api/clear_all',{method:'POST'});alert(r.ok?'已清空全部对话':'失败:'+(r.msg||''));loadPeers()}
 async function loadFacts(){const f=await api('/api/facts');document.getElementById('factRows').innerHTML=f.facts.map(x=>'<tr><td>'+x.peer+'</td><td><span class=tag>'+x.k+'</span></td><td>'+x.v+'</td><td>'+x.conf+'</td><td><button class="act del" onclick="delFact('+x.id+')">删</button><button class="act lock" onclick="lockFact('+x.id+','+(x.locked?'false':'true')+')">'+(x.locked?'已锁':'锁定')+'</button></td></tr>').join('')||'<tr><td colspan=5 class=dim>暂无事实</td></tr>'}
 async function addFact(){const peer=document.getElementById('fPeer').value,k=document.getElementById('fK').value,v=document.getElementById('fV').value;if(!peer||!k||!v)return;await api('/api/facts/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer,k,v})});loadFacts()}
 async function delFact(id){await api('/api/facts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadFacts()}
@@ -784,7 +786,21 @@ class Admin:
                     except Exception as e:
                         self._json(200, {"ok": False, "error": str(e)[:200]})
                 elif p == "/api/peer/delete":
-                    admin.store.delete_peer(str(d.get("peer", ""))); self._json(200, {"ok": True})
+                    peer = str(d.get("peer", ""))
+                    admin.store.clear_peer(peer)
+                    try:
+                        profilemod.clear_peer(getattr(admin.cfg, "memory_dir", ""), peer)
+                    except Exception:
+                        pass
+                    self._json(200, {"ok": True})
+                elif p == "/api/clear_all":
+                    try:
+                        admin.store.clear_all_conversations()
+                        profilemod.clear_all(getattr(admin.cfg, "memory_dir", ""))
+                        admin.store.log_action("clear_all", "", "")
+                        self._json(200, {"ok": True})
+                    except Exception as e:
+                        self._json(200, {"ok": False, "msg": str(e)[:120]})
                 elif p == "/api/persona":
                     txt = d.get("text", ""); pp = admin._persona_path(); ok = False
                     if pp:

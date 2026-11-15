@@ -179,4 +179,9 @@ class Scheduler:
         if ok:
             self.store.kv_set("autonomy:last", str(now))
             self.store.log_action("autonomy", act, detail)
+            if act == "avatar":
+                try:
+                    self.store.kv_set("self:avatar_desc", detail or "二次元风格头像")
+                except Exception:
+                    pass
         return {"ok": ok, "act": act, "detail": detail or ("成功" if ok else "执行失败")}

@@ -252,6 +252,22 @@ class Store:
             self.conn.execute("DELETE FROM messages WHERE peer_id=?", (peer,))
             self.conn.commit()
 
+    def clear_peer(self, peer: str) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM messages WHERE peer_id=?", (peer,))
+            self.conn.execute("DELETE FROM vecs WHERE peer_id=?", (peer,))
+            self.conn.execute("DELETE FROM facts WHERE subject=?", (peer,))
+            self.conn.execute("DELETE FROM kv WHERE k=?", ("summary:" + peer,))
+            self.conn.commit()
+
+    def clear_all_conversations(self) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM messages")
+            self.conn.execute("DELETE FROM vecs")
+            self.conn.execute("DELETE FROM facts")
+            self.conn.execute("DELETE FROM kv WHERE k LIKE 'summary:%'")
+            self.conn.commit()
+
     def backup(self, backup_dir: str) -> str:
         os.makedirs(backup_dir, exist_ok=True)
         ts = time.strftime("%Y%m%d-%H%M%S")

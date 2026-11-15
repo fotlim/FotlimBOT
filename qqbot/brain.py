@@ -89,6 +89,39 @@ class Brain:
                 pass
         return self.persona
 
+    def _self_name(self) -> str:
+        try:
+            p = self._current_persona()
+            for line in p.splitlines():
+                if "姓名" in line:
+                    parts = re.split(r"[：:]", line, maxsplit=1)
+                    val = parts[1] if len(parts) > 1 else line
+                    val = re.split(r"[（(]", val)[0].strip()
+                    if val:
+                        return val
+        except Exception:
+            pass
+        return "FotlimBOT"
+
+    def _qq_nick(self) -> str:
+        import time as _t
+        now = _t.time()
+        if getattr(self, "_nick_ts", 0) and now - self._nick_ts < 60:
+            return getattr(self, "_nick_val", "")
+        val = ""
+        try:
+            ch = getattr(self, "channel", None)
+            if ch is not None and hasattr(ch, "call_action"):
+                r = ch.call_action("get_login_info", {}, timeout=5)
+                _d = ((r or {}).get("data") or {})
+                val = _d.get("nickname", "") or ""
+                self._uin = str(_d.get("user_id", "") or "")
+        except Exception:
+            val = ""
+        self._nick_val = val
+        self._nick_ts = now
+        return val
+
     def _sys(self) -> str:
         base = (self._current_persona() + "\n\n规则：像真人在 QQ 上聊天——短句、口语、多用语气词和省略号；"
                 "可以有小情绪、偶尔说半句/欲言又止，不必每句都完整；自然回应对方，不要像客服、不要 markdown、"
@@ -348,13 +381,25 @@ class Brain:
                 _who = inbound.sender_name or inbound.peer_id
                 messages.append({"role": "system", "content": "（关于「" + _who + "」的记忆：\n" + "\n".join(parts) + "\n自然运用，别生硬引用。）"})
         hist = self.store.history(inbound.peer_id, hist_n)
+        hist = [h for h in hist if not (h.get("role") == "assistant" and "阿渔" in (h.get("content") or ""))]
         if hist and hist[-1].get("role") == "user":
             messages += hist[:-1]
             _last = hist[-1]
         else:
             messages += hist
             _last = None
-        messages.append({"role": "system", "content": "（角色提醒：你现在就是上面人设里的角色，严格按人设的性格和语气说话，不要受之前对话里旧语气影响，不要跳出角色、不要自称 AI。）"})
+        _nm = self._self_name()
+        _qn = self._qq_nick()
+        try:
+            _av = self.store.kv_get("self:avatar_desc", "") or ""
+        except Exception:
+            _av = ""
+        _idn = ("【身份锚·最后强调·不可违背】你的角色名字是「" + _nm + "」，你就是" + _nm +
+                "；QQ号是「" + (getattr(self, "_uin", "") or "未知") + "」，QQ账号昵称是「" + (_qn or "未知") + "」" +
+                ("，当前头像是" + _av if _av else "") +
+                "。你对自己的QQ拥有完全控制权：可改昵称/头像/签名、发QQ空间说说、给好友动态点赞等（受模块开关约束）。" +
+                "绝不可以自称“阿渔”或其它名字，必须严格保持" + _nm + "的性格与说话方式。")
+        messages.append({"role": "system", "content": _idn})
         if _last:
             messages.append(_last)
         if voices and not inbound.text:

@@ -77,11 +77,32 @@ def analyze(base: str, scene: str, peer: str, nick: str, llm) -> str | None:
     return out
 
 
+def clear_all(base: str) -> None:
+    if not os.path.isdir(base):
+        return
+    for fn in os.listdir(base):
+        if fn.endswith(".txt"):
+            try:
+                os.remove(os.path.join(base, fn))
+            except Exception:
+                pass
+
+
+def clear_peer(base: str, peer: str) -> None:
+    if not os.path.isdir(base):
+        return
+    for fn in os.listdir(base):
+        if fn.endswith(".txt") and ("__" + str(peer) + "__") in fn:
+            try:
+                os.remove(os.path.join(base, fn))
+            except Exception:
+                pass
+
+
 def list_profiles(base: str) -> list[dict]:
     out = []
     if not os.path.isdir(base):
-        return out
-    for fn in os.listdir(base):
+        return out    for fn in os.listdir(base):
         if not fn.endswith(".txt") or fn.endswith(".analysis.txt"):
             continue
         stem = fn[:-4]
