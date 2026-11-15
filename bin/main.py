@@ -56,6 +56,12 @@ def main() -> int:
             print(f"[profile] backfilled {len(profilemod.list_profiles(cfg.memory_dir))}", flush=True)
     except Exception as e:
         print("[profile] backfill skip:", repr(e), flush=True)
+    try:
+        from qqbot import rag as ragmod
+        import threading as _th
+        _th.Thread(target=lambda: print("[rag] backfilled", ragmod.backfill(store, 1200), flush=True), daemon=True).start()
+    except Exception as e:
+        print("[rag] skip:", repr(e), flush=True)
 
     if cfg.channel == "mock":
         from qqbot.channels.mock import run_demo

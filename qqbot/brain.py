@@ -110,11 +110,18 @@ class Brain:
         has_img = any(s.type == "image" for s in inbound.segments)
         has_voc = any(s.type == "voice" for s in inbound.segments)
         content = inbound.text or ("[图片]" if has_img else ("[语音]" if has_voc else "[消息]"))
-        self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
+        mid = self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
                                sender_id=inbound.sender_id, sender_name=inbound.sender_name, role="user",
                                content=content, msg_id=inbound.message_id,
                                meta={"segments": [s.type for s in inbound.segments]})
         self._extract_facts(inbound.text, inbound.peer_id)
+        if inbound.text:
+            try:
+                from . import rag as ragmod
+                if self.store.get_settings()["memory"].get("use_rag", True):
+                    threading.Thread(target=ragmod.index, args=(self.store, mid, inbound.peer_id, inbound.text), daemon=True).start()
+            except Exception:
+                pass
         if inbound.text and self.store.get_settings()["memory"].get("use_profile", True):
             try:
                 from . import profile as profilemod
@@ -308,9 +315,17 @@ class Brain:
                 elif _samp:
                     parts.append("· ta 平时这样说：" + _samp.replace("\n", " ")[-240:])
             if inbound.text:
-                past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
+                past = []
+                if mem.get("use_rag", True):
+                    try:
+                        from . import rag as ragmod
+                        past = ragmod.search(self.store, inbound.peer_id, inbound.text, k=retrieve)
+                    except Exception:
+                        past = []
+                if not past:
+                    past = self.store.search(inbound.peer_id, inbound.text, limit=retrieve)
                 if past:
-                    parts.append("· 相关旧话：" + " / ".join(p[:40] for p in past))
+                    parts.append("· 相关旧话：" + " / ".join(p[:60] for p in past))
             if parts:
                 _who = inbound.sender_name or inbound.peer_id
                 messages.append({"role": "system", "content": "（关于「" + _who + "」的记忆：\n" + "\n".join(parts) + "\n自然运用，别生硬引用。）"})
@@ -353,8 +368,14 @@ class Brain:
             wlist = [w for w in re.split(r"[,，\s]+", str(mod.get("words", ""))) if w]
             for w in wlist:
                 reply = reply.replace(w, "＊" * len(w))
-        self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
+        _aid = self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
                                sender_id="bot", sender_name="FotlimBOT", role="assistant", content=reply)
+        if st.get("memory", {}).get("use_rag", True):
+            try:
+                from . import rag as ragmod
+                threading.Thread(target=ragmod.index, args=(self.store, _aid, inbound.peer_id, reply), daemon=True).start()
+            except Exception:
+                pass
         if st.get("memory", {}).get("use_summary", True):
             try:
                 threading.Thread(target=self._summarize_bg, args=(inbound.peer_id,), daemon=True).start()

@@ -31,10 +31,13 @@ CREATE TABLE IF NOT EXISTS memes(
   id INTEGER PRIMARY KEY AUTOINCREMENT, pack TEXT, tag TEXT, caption TEXT,
   keywords TEXT, path TEXT UNIQUE, added REAL
 );
+CREATE TABLE IF NOT EXISTS vecs(
+  msg_id INTEGER PRIMARY KEY, peer_id TEXT, v TEXT, content TEXT, ts REAL
+);
 """
 
 DEFAULT_SETTINGS = {
-    "memory": {"enabled": True, "retrieve": 4, "use_facts": True, "use_profile": True, "use_summary": True},
+    "memory": {"enabled": True, "retrieve": 4, "use_facts": True, "use_profile": True, "use_summary": True, "use_rag": True},
     "vision": {"enabled": True},
     "emoji": {"enabled": True, "prob": 0.18},
     "voice": {"enabled": True, "voice": "zh-CN-XiaoxiaoNeural"},
@@ -402,3 +405,25 @@ class Store:
                 "SELECT id,role,content FROM messages WHERE peer_id=? AND id>? ORDER BY id ASC LIMIT ?",
                 (peer_id, int(after_id), limit)).fetchall()
         return [{"id": i, "role": r, "content": c} for i, r, c in rows]
+
+    # ---- 向量检索（RAG）----
+    def vec_upsert(self, msg_id: int, peer_id: str, v: str, content: str, ts: float) -> None:
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO vecs(msg_id,peer_id,v,content,ts) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(msg_id) DO UPDATE SET v=excluded.v, content=excluded.content",
+                (msg_id, peer_id, v, content, ts))
+            self.conn.commit()
+
+    def vec_for_peer(self, peer_id: str, limit: int = 500) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT v,content FROM vecs WHERE peer_id=? ORDER BY ts DESC LIMIT ?", (peer_id, limit)).fetchall()
+        return [{"v": v, "content": c} for v, c in rows]
+
+    def messages_missing_vec(self, limit: int = 800) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT m.id,m.peer_id,m.content FROM messages m LEFT JOIN vecs v ON v.msg_id=m.id "
+                "WHERE v.msg_id IS NULL AND m.content<>'' ORDER BY m.id ASC LIMIT ?", (limit,)).fetchall()
+        return [{"id": i, "peer_id": p, "content": c} for i, p, c in rows]
