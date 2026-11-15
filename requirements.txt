@@ -1,0 +1,4 @@
+websocket-client>=1.7
+# 后续可选：
+# nonebot2>=2.3        # 框架当底座（如需 adapter 生态）
+# aiosqlite>=0.20      # M2 记忆落盘

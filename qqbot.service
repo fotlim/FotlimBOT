@@ -1,0 +1,20 @@
+[Unit]
+Description=qqbot (self-hosted QQ agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linocean
+Group=linocean
+WorkingDirectory=/home/linocean/qqbot
+EnvironmentFile=-/home/linocean/qqbot/.env
+ExecStart=/usr/bin/python3 -u bin/main.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target
