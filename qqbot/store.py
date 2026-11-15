@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS actions(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, kind TEXT, peer_id TEXT, detail TEXT
 );
+CREATE TABLE IF NOT EXISTS emotions(
+  peer_id TEXT PRIMARY KEY, js TEXT, updated REAL
+);
 """
 
 DEFAULT_SETTINGS = {
@@ -34,6 +37,8 @@ DEFAULT_SETTINGS = {
     "proactive": {"enabled": True, "quiet_start": "22:30", "quiet_end": "08:00", "min_idle_h": 2},
     "reply": {"max_tokens": 240, "history": 8, "reasoning": "high", "bubble_len": 28},
     "rate": {"qpm": 20},
+    "emotion": {"enabled": True, "use_llm": False, "decay_per_hour": 3.0,
+                "baseline_affinity": 50.0, "baseline_p": 0.6, "baseline_a": 0.35, "baseline_d": 0.6},
 }
 
 
@@ -270,3 +275,35 @@ class Store:
         merged = _deep_merge(self.get_settings(), patch or {})
         self.kv_set("settings_json", json.dumps(merged, ensure_ascii=False))
         return merged
+
+    # ---- 情绪状态存储（PAD + 好感 + 精力）----
+    def emotion_get_raw(self, peer_id: str):
+        with self._lock:
+            r = self.conn.execute("SELECT js FROM emotions WHERE peer_id=?", (peer_id,)).fetchone()
+        if not r:
+            return None
+        try:
+            return json.loads(r[0])
+        except Exception:
+            return None
+
+    def emotion_save(self, peer_id: str, state: dict) -> None:
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO emotions(peer_id,js,updated) VALUES(?,?,?) "
+                "ON CONFLICT(peer_id) DO UPDATE SET js=excluded.js, updated=excluded.updated",
+                (peer_id, json.dumps(state, ensure_ascii=False), time.time()))
+            self.conn.commit()
+
+    def emotion_all_raw(self) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute("SELECT peer_id,js FROM emotions ORDER BY updated DESC").fetchall()
+        out = []
+        for p, js in rows:
+            try:
+                st = json.loads(js)
+                st["peer_id"] = p
+                out.append(st)
+            except Exception:
+                pass
+        return out

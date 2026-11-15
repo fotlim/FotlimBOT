@@ -15,6 +15,7 @@ from .store import Store
 from .types import Outbound, Segment
 from . import voice
 from . import logbus
+from . import emotion
 
 
 _HTML = r'''<!doctype html><html lang="zh"><head><meta charset="utf-8">
@@ -86,6 +87,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   <div class="nav-item" data-tab="acl"><span class="ic">🛡️</span>名单</div>
   <div class="nav-item" data-tab="logs"><span class="ic">📜</span>日志</div>
   <div class="nav-item" data-tab="settings"><span class="ic">⚙️</span>设置</div>
+  <div class="nav-item" data-tab="emotions"><span class="ic">💗</span>情绪</div>
   <div class="nav-item" data-tab="send"><span class="ic">✉️</span>发送</div>
 </aside>
 <main class="main">
@@ -112,6 +114,13 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
         <button class="act del" onclick="delPeer()">删除对话</button>
       </div>
       <div id="msgs" class="chatbox"></div>
+    </div>
+  </section>
+
+  <section id="tab-emotions" class="page">
+    <div class="card"><h3>情绪状态（PAD 情绪场 · 好感 · 精力）</h3>
+      <table><thead><tr><th>对话者</th><th>心情</th><th>好感</th><th>愉悦P</th><th>唤醒A</th><th>掌控D</th><th>精力</th><th>操作</th></tr></thead><tbody id="emoRows"></tbody></table>
+      <div class="toolbar" style="margin-top:12px">手动设置：<input id="ePeer" placeholder="QQ/peer" size="12"> 心情 <input id="eMood" placeholder="开心/害羞/难过/生气" size="10"> 好感 <input id="eAff" type="number" step="any" placeholder="0-100" size="6"><button class="act" onclick="setEmotion()">应用</button> <span id="eRet" class="r"></span></div>
     </div>
   </section>
 
@@ -188,13 +197,15 @@ async function loadFacts(){const f=await api('/api/facts');document.getElementBy
 async function addFact(){const peer=document.getElementById('fPeer').value,k=document.getElementById('fK').value,v=document.getElementById('fV').value;if(!peer||!k||!v)return;await api('/api/facts/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer,k,v})});loadFacts()}
 async function delFact(id){await api('/api/facts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadFacts()}
 async function lockFact(id,l){await api('/api/facts/lock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,locked:l})});loadFacts()}
-const MSCHEMA={memory:{t:'长期记忆',f:[['enabled','bool','启用'],['retrieve','num','检索条数']]},vision:{t:'看图（视觉）',f:[['enabled','bool','启用']]},emoji:{t:'自动表情',f:[['enabled','bool','启用'],['prob','num','概率0-1']]},voice:{t:'语音TTS',f:[['enabled','bool','启用'],['voice','text','音色']]},proactive:{t:'主动发言',f:[['enabled','bool','启用'],['quiet_start','text','静默开始'],['quiet_end','text','静默结束'],['min_idle_h','num','最小空闲h']]},reply:{t:'回复',f:[['max_tokens','num','最大tokens'],['history','num','上下文条数'],['reasoning','sel:none low medium high','推理强度'],['bubble_len','num','每句字数']]},rate:{t:'频率',f:[['qpm','num','每分钟上限']]}};
+const MSCHEMA={memory:{t:'长期记忆',f:[['enabled','bool','启用'],['retrieve','num','检索条数']]},vision:{t:'看图（视觉）',f:[['enabled','bool','启用']]},emoji:{t:'自动表情',f:[['enabled','bool','启用'],['prob','num','概率0-1']]},voice:{t:'语音TTS',f:[['enabled','bool','启用'],['voice','text','音色']]},proactive:{t:'主动发言',f:[['enabled','bool','启用'],['quiet_start','text','静默开始'],['quiet_end','text','静默结束'],['min_idle_h','num','最小空闲h']]},reply:{t:'回复',f:[['max_tokens','num','最大tokens'],['history','num','上下文条数'],['reasoning','sel:none low medium high','推理强度'],['bubble_len','num','每句字数']]},rate:{t:'频率',f:[['qpm','num','每分钟上限']]},emotion:{t:'情绪/好感',f:[['enabled','bool','启用'],['use_llm','bool','LLM评估(慢)'],['decay_per_hour','num','每小时衰减'],['baseline_affinity','num','初始好感']]}};
 let _s={};
 async function loadModules(){_s=await api('/api/settings_full');let h='';for(const sec in MSCHEMA){const def=MSCHEMA[sec];h+='<div class="card" style="margin:0 0 10px;padding:13px"><b>'+def.t+'</b><div class="toolbar" style="margin-top:8px">';for(const fld of def.f){const k=fld[0],ty=fld[1],lab=fld[2],v=_s[sec][k];if(ty==='bool'){h+='<label class="mini"><input type="checkbox" id="set_'+sec+'_'+k+'" '+(v?'checked':'')+'> '+lab+'</label>';}else if(ty.indexOf('sel:')===0){const opts=ty.slice(4).split(' ');h+=lab+' <select id="set_'+sec+'_'+k+'">'+opts.map(o=>'<option '+(o===v?'selected':'')+'>'+o+'</option>').join('')+'</select>';}else{const t2=ty==='num'?'number':'text';h+=lab+' <input type="'+t2+'" '+(ty==='num'?'step=any ':'')+'id="set_'+sec+'_'+k+'" value="'+v+'" size="'+(ty==='num'?'6':'10')+'">';}}h+='</div></div>';}document.getElementById('modEditor').innerHTML=h}
 async function saveSettingsFull(){const patch={};for(const sec in MSCHEMA){patch[sec]={};for(const fld of MSCHEMA[sec].f){const k=fld[0],ty=fld[1];const el=document.getElementById('set_'+sec+'_'+k);patch[sec][k]=ty==='bool'?el.checked:(ty==='num'?parseFloat(el.value):el.value);}}const r=await api('/api/settings_full',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});document.getElementById('modRet').textContent=r.ok?'已保存并生效':'保存失败'}
 async function loadAcl(){const a=await api('/api/acl');document.getElementById('white').value=(a.white||[]).join('\n');document.getElementById('black').value=(a.black||[]).join('\n')}
 async function saveAcl(){const white=document.getElementById('white').value.split('\n').map(s=>s.trim()).filter(Boolean),black=document.getElementById('black').value.split('\n').map(s=>s.trim()).filter(Boolean);const r=await api('/api/acl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({white,black})});document.getElementById('aclRet').textContent='已保存 白'+r.white+'/黑'+r.black}
 async function loadLogs(){const l=await api('/api/logs');const box=document.getElementById('logbox');box.textContent=(l.lines||[]).join('\n');box.scrollTop=box.scrollHeight}
+async function loadEmotions(){const e=await api('/api/emotions');document.getElementById('emoRows').innerHTML=(e.emotions||[]).map(x=>'<tr><td>'+x.peer_id+'</td><td><span class=tag>'+x.mood+'</span></td><td>'+x.affinity+'</td><td>'+x.p+'</td><td>'+x.a+'</td><td>'+x.d+'</td><td>'+x.energy+'</td><td><button class="act lock" onclick="document.getElementById(\'ePeer\').value=\''+x.peer_id+'\';document.getElementById(\'eAff\').value=\''+x.affinity+'\'">选中</button></td></tr>').join('')||'<tr><td colspan=8 class=dim>暂无情绪记录（聊两句就有了）</td></tr>'}
+async function setEmotion(){const peer=document.getElementById('ePeer').value,mood=document.getElementById('eMood').value,aff=document.getElementById('eAff').value;if(!peer)return;const body={peer};if(mood)body.mood=mood;if(aff!=='')body.affinity=parseFloat(aff);const r=await api('/api/emotion/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});document.getElementById('eRet').textContent=r.ok?'已更新':'失败';loadEmotions()}
 async function loadSettings(){const m=await api('/api/model');document.getElementById('mBase').value=m.base;document.getElementById('mModel').value=m.model;document.getElementById('mKey').placeholder=m.key_set?'(已设置,留空不改)':'(未设置)';
  const s=await api('/api/settings');document.getElementById('proactiveBox').innerHTML='当前 <b class="'+(s.proactive?'ok':'bad')+'">'+(s.proactive?'开启':'关闭')+'</b> <button class="act" onclick="toggleProactive('+(s.proactive?'false':'true')+')">'+(s.proactive?'关闭':'开启')+'</button>';document.getElementById('settingsExtra').innerHTML='静默 '+s.quiet_start+'-'+s.quiet_end+' · 表情概率 '+s.emoji_prob+' · 表情包 '+s.sticker_count+' 张';
  const bs=await api('/api/backups');document.getElementById('baks').innerHTML='备份：'+((bs.backups||[]).map(b=>b.name+' ('+b.size_kb+'KB)').join(' · ')||'无');
@@ -205,8 +216,8 @@ async function toggleProactive(v){await api('/api/settings/proactive',{method:'P
 async function doBackup(){const r=await api('/api/backup',{method:'POST'});document.getElementById('bakRet').textContent=r.ok?('已备份 '+r.file):('失败 '+(r.error||''));loadSettings()}
 async function savePersona(){const text=document.getElementById('persona').value;const r=await api('/api/persona',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});document.getElementById('pRet').textContent=r.ok?'已保存':('失败')}
 async function doSend(){const scene=document.getElementById('sScene').value,peer=document.getElementById('sPeer').value,text=document.getElementById('sText').value,image_url=document.getElementById('sImg').value,voice_text=document.getElementById('sVoice').value,sticker=document.getElementById('sSticker').checked;const r=await api('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scene,peer,text,image_url,voice_text,sticker})});document.getElementById('sRet').textContent=JSON.stringify(r)}
-const TITLES={dash:'仪表盘',chat:'对话',facts:'记忆',modules:'模块',acl:'名单',logs:'日志',settings:'设置',send:'发送'};
-const loaders={dash:loadDash,chat:loadPeers,facts:loadFacts,modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings};
+const TITLES={dash:'仪表盘',chat:'对话',facts:'记忆',modules:'模块',acl:'名单',logs:'日志',settings:'设置',send:'发送',emotions:'情绪'};
+const loaders={dash:loadDash,chat:loadPeers,facts:loadFacts,modules:loadModules,acl:loadAcl,logs:loadLogs,settings:loadSettings,emotions:loadEmotions};
 document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.page').forEach(t=>t.classList.remove('on'));document.getElementById('tab-'+b.dataset.tab).classList.add('on');document.getElementById('pageTitle').textContent=TITLES[b.dataset.tab]||'';if(loaders[b.dataset.tab])loaders[b.dataset.tab]()});
 setInterval(refreshStatus,3000);refreshStatus();loadDash();
 </script></body></html>'''
@@ -382,6 +393,7 @@ class Admin:
                 elif p == "/api/modules": self._json(200, {"modules": admin._modules()})
                 elif p == "/api/acl": self._json(200, {"white": admin.store.kv_list_get("acl:white"), "black": admin.store.kv_list_get("acl:black")})
                 elif p == "/api/logs": self._json(200, {"lines": logbus.lines(300)})
+                elif p == "/api/emotions": self._json(200, {"emotions": emotion.snapshot(admin.store, admin.store.get_settings())})
                 elif p == "/api/model":
                     llm = admin.brain.llm
                     self._json(200, {"base": getattr(llm, "base", ""), "model": getattr(llm, "model", ""), "key_set": bool(getattr(llm, "key", ""))})
@@ -407,6 +419,20 @@ class Admin:
                     ok = bool(segs) and admin.channel.send(Outbound(scene, peer, segs))
                     admin.store.log_action("manual_send", peer, (d.get("text") or "[media]")[:50])
                     self._json(200, {"ok": ok})
+                elif p == "/api/emotion/set":
+                    peer = str(d.get("peer", ""))
+                    st = admin.store.emotion_get_raw(peer) or emotion.new_state(admin.store.get_settings())
+                    st = emotion.relax(st, admin.store.get_settings())
+                    if d.get("mood"):
+                        st["mood"] = str(d["mood"])
+                    if d.get("affinity") not in (None, ""):
+                        st["affinity"] = max(0.0, min(100.0, float(d["affinity"])))
+                    for k in ("p", "a", "d"):
+                        if d.get(k) not in (None, ""):
+                            st[k] = max(0.0, min(1.0, float(d[k])))
+                    st["updated"] = time.time()
+                    admin.store.emotion_save(peer, st)
+                    self._json(200, {"ok": True})
                 elif p == "/api/facts/add":
                     admin.store.add_fact(str(d.get("peer", "")), str(d.get("k", "")), str(d.get("v", "")), 1.0, "manual"); self._json(200, {"ok": True})
                 elif p == "/api/facts/delete":

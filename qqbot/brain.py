@@ -1,4 +1,4 @@
-"""核心大脑：决策 + 生成 + 媒体 + 事实 + 设置驱动。纯业务，读写 Store。"""
+"""核心大脑：决策 + 生成 + 媒体 + 事实 + 情绪 + 设置驱动。纯业务，读写 Store。"""
 from __future__ import annotations
 
 import base64
@@ -10,6 +10,7 @@ import urllib.request
 from .llm import LLMClient
 from .store import Store
 from .types import Capabilities, Inbound, Outbound, Segment
+from . import emotion
 
 
 def split_bubbles(text: str, max_len: int = 28) -> list[str]:
@@ -39,7 +40,7 @@ def split_bubbles(text: str, max_len: int = 28) -> list[str]:
     return out or [text]
 
 
-def _download_b64(url: str) -> str | None:
+def _download_b64(url: str):
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -106,7 +107,7 @@ class Brain:
             return []
         return sorted(glob.glob(self.sticker_dir + "/*.png") + glob.glob(self.sticker_dir + "/*.jpg"))
 
-    def _maybe_sticker_segment(self):
+    def _maybe_sticker_segment(self, preferred=None):
         s = self.store.get_settings()
         if not s["emoji"]["enabled"]:
             return None
@@ -116,6 +117,10 @@ class Brain:
         files = self._stickers()
         if not files:
             return None
+        if preferred:
+            cand = [f for f in files if f[:-4].endswith(preferred)]
+            if cand:
+                files = cand
         try:
             with open(random.choice(files), "rb") as f:
                 return Segment("image", {"file": "base64://" + base64.b64encode(f.read()).decode()})
@@ -139,15 +144,26 @@ class Brain:
             return None
 
         st = self.store.get_settings()
+
+        # 情绪更新
+        emo = None
+        if st["emotion"]["enabled"]:
+            try:
+                emo = emotion.update(self.store, inbound.peer_id, inbound.text, st, llm=self.llm)
+            except Exception:
+                emo = None
+
         use_mem = st["memory"]["enabled"]
         use_vis = st["vision"]["enabled"]
         hist_n = int(st["reply"].get("history", 8))
         max_tokens = int(st["reply"].get("max_tokens", 240))
-        reasoning = st["reply"].get("reasoning", "low")
+        reasoning = st["reply"].get("reasoning", "high")
         bubble_len = int(st["reply"].get("bubble_len", 28))
         retrieve = int(st["memory"].get("retrieve", 4))
 
         messages = [{"role": "system", "content": self._sys()}]
+        if emo:
+            messages.append({"role": "system", "content": emotion.prompt(emo)})
         fb = self._facts_block(inbound.peer_id)
         if fb:
             messages.append({"role": "system", "content": fb})
@@ -184,7 +200,10 @@ class Brain:
         self.store.add_message(channel=inbound.channel, scene=inbound.scene, peer_id=inbound.peer_id,
                                sender_id="bot", sender_name="阿渔", role="assistant", content=reply)
         segs = [Segment.text(p) for p in split_bubbles(reply, bubble_len)]
-        stk = self._maybe_sticker_segment()
+        if emo and float(emo.get("energy", 80)) < 30:
+            segs = segs[:1]
+        cat = emotion.sticker_category(emo) if emo else None
+        stk = self._maybe_sticker_segment(cat)
         if stk is not None:
             segs.append(stk)
         return Outbound(inbound.scene, inbound.peer_id, segs, reply_to=inbound.message_id or None)
@@ -194,19 +213,24 @@ class Brain:
         hist = self.store.history(peer_id, 6)
         ctx = "\n".join(f"- {m['role']}: {m['content']}" for m in hist) or "（还没有聊过）"
         fb = self._facts_block(peer_id)
-        messages = [
-            {"role": "system", "content": self._sys() + "\n现在你要主动给对方发消息（不是回复），简短自然。"},
-            {"role": "system", "content": "最近对话：\n" + ctx + ("\n" + fb if fb else "")},
-            {"role": "user", "content": hint},
-        ]
+        emo = None
+        if st["emotion"]["enabled"]:
+            raw = self.store.emotion_get_raw(peer_id)
+            if raw:
+                emo = emotion.relax(raw, st)
+        msgs = [{"role": "system", "content": self._sys() + "\n现在你要主动给对方发消息（不是回复），简短自然。"}]
+        if emo:
+            msgs.append({"role": "system", "content": emotion.prompt(emo)})
+        msgs.append({"role": "system", "content": "最近对话：\n" + ctx + ("\n" + fb if fb else "")})
+        msgs.append({"role": "user", "content": hint})
         try:
-            reply = self.llm.chat(messages, temperature=0.9, max_tokens=200, reasoning=st["reply"].get("reasoning", "low"))
+            reply = self.llm.chat(msgs, temperature=0.9, max_tokens=200, reasoning=st["reply"].get("reasoning", "high"))
         except Exception:
             reply = "在吗…突然有点想问问你今天过得怎么样"
         self.store.add_message(channel="proactive", scene=scene, peer_id=peer_id,
                                sender_id="bot", sender_name="阿渔", role="assistant", content=reply)
         segs = [Segment.text(p) for p in split_bubbles(reply, int(st["reply"].get("bubble_len", 28)))]
-        stk = self._maybe_sticker_segment()
+        stk = self._maybe_sticker_segment(emotion.sticker_category(emo) if emo else None)
         if stk is not None:
             segs.append(stk)
         return Outbound(scene, peer_id, segs)
