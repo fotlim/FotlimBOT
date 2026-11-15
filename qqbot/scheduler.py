@@ -1,7 +1,8 @@
-"""调度器：主动发言 + 定时（设置驱动，运行时可开关）。"""
+"""调度器：主动发言 + 自主行为（独立开关，可手动试跑）。"""
 from __future__ import annotations
 
 import datetime
+import random
 import threading
 import time
 
@@ -47,8 +48,21 @@ class Scheduler:
             time.sleep(120)
 
     def _tick(self) -> None:
-        if not self.enabled or not getattr(self.channel, "connected", False):
+        if not getattr(self.channel, "connected", False):
             return
+        try:
+            if self.enabled:
+                self._proactive()
+        except Exception as e:
+            print("[sched] proactive err", repr(e), flush=True)
+        try:
+            r = self._autonomy()
+            if r.get("ok"):
+                print("[sched] autonomy ->", r.get("act"), flush=True)
+        except Exception as e:
+            print("[sched] autonomy err", repr(e), flush=True)
+
+    def _proactive(self) -> None:
         cfgp = self.store.get_settings()["proactive"]
         now = datetime.datetime.now()
         if self._in_quiet(now, _hm(cfgp.get("quiet_start", "22:30")), _hm(cfgp.get("quiet_end", "08:00"))):
@@ -76,47 +90,47 @@ class Scheduler:
                 self.store.log_action("proactive", peer, hint)
                 print("[sched] proactive ->", peer, flush=True)
                 time.sleep(2)
-        self._autonomy()
 
-    def _autonomy(self) -> None:
+    def _autonomy(self, force: bool = False) -> dict:
         a = self.store.get_settings().get("autonomy", {})
-        if not a.get("enabled"):
-            return
-        import random
+        if not force and not a.get("enabled"):
+            return {"ok": False, "detail": "自主行为未启用"}
+        if not getattr(self.channel, "connected", False):
+            return {"ok": False, "detail": "通道未连接"}
         now = time.time()
-        if now - float(self.store.kv_get("autonomy:last", 0) or 0) < float(a.get("min_interval_hours", 6)) * 3600:
-            return
-        acts = []
-        if a.get("allow_like"):
-            acts.append("like")
-        if a.get("allow_qzone_post"):
-            acts.append("qzone")
-        if a.get("allow_nickname"):
-            acts.append("nick")
+        if not force and (now - float(self.store.kv_get("autonomy:last", 0) or 0) < float(a.get("min_interval_hours", 6)) * 3600):
+            return {"ok": False, "detail": "未到最小间隔"}
+        acts = [k for k, flag in (("like", a.get("allow_like")), ("qzone", a.get("allow_qzone_post")),
+                                  ("nick", a.get("allow_nickname"))) if flag]
         if not acts:
-            return
+            return {"ok": False, "detail": "未勾选任何自主动作"}
         act = random.choice(acts)
         from . import actions
+        detail = ""
         ok = False
         try:
             if act == "like":
                 feeds = [f for f in actions.simplify_feeds(actions.qzone_feeds(self.channel)) if f.get("tid")]
-                if feeds:
-                    f = random.choice(feeds)
-                    r = actions.qzone_like(self.channel, f["tid"])
-                    ok = bool(r and r.get("status") == "ok")
+                if not feeds:
+                    return {"ok": False, "act": act, "detail": "好友动态为空"}
+                f = random.choice(feeds)
+                r = actions.qzone_like(self.channel, f["tid"])
+                ok = bool(r and r.get("status") == "ok")
+                detail = f"赞了 {f.get('nick')} 的说说"
             elif act == "qzone":
                 txt = self.brain.llm.chat(
-                    [{"role": "system", "content": "你是FotlimBOT，用一句简短治愈的话发QQ空间说说，不加话题不卖萌过度"},
+                    [{"role": "system", "content": "你是FotlimBOT，用一句简短治愈的话发QQ空间说说，不加话题"},
                      {"role": "user", "content": "写一句今天的心情"}], max_tokens=50, reasoning="none")
                 r = actions.qzone_publish(self.channel, (txt or "今天也是想你的一天").strip())
                 ok = bool(r and r.get("status") == "ok")
+                detail = "发了条说说"
             elif act == "nick":
                 r = actions.set_nickname(self.channel, "FotlimBOT·今天也元气满满")
                 ok = bool(r and r.get("status") == "ok")
-        except Exception:
-            ok = False
+                detail = "改了昵称"
+        except Exception as e:
+            return {"ok": False, "act": act, "detail": repr(e)[:120]}
         if ok:
             self.store.kv_set("autonomy:last", str(now))
-            self.store.log_action("autonomy", act, "")
-            print("[sched] autonomy ->", act, flush=True)
+            self.store.log_action("autonomy", act, detail)
+        return {"ok": ok, "act": act, "detail": detail or ("成功" if ok else "执行失败")}
