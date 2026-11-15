@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 from .store import Store
-from .types import Outbound, Segment, Inbound
+from .types import Outbound, Segment
 from . import voice
 from . import logbus
 from . import emotion
@@ -24,7 +24,6 @@ from . import actions
 from . import web as webmod
 from . import meme as mememod
 from . import profile as profilemod
-from . import tools as toolsmod
 
 
 MARKET = [
@@ -579,7 +578,6 @@ class Admin:
                                      "analysis": profilemod.read_analysis(getattr(admin.cfg, "memory_dir", ""), q.get("scene",[""])[0], q.get("peer",[""])[0], q.get("nick",[""])[0])})
                 elif p == "/api/actions": self._json(200, {"actions": admin.store.actions_recent(50)})
                 elif p == "/api/modules": self._json(200, {"modules": admin._modules()})
-                elif p == "/api/tools": self._json(200, {"tools": toolsmod.TOOLS})
                 elif p == "/api/plugins":
                     host = getattr(admin.channel, "host", None)
                     metas = host.list() if host is not None else []
@@ -738,11 +736,6 @@ class Admin:
                 elif p == "/api/autonomy/run":
                     res = admin.scheduler._autonomy(force=True) if admin.scheduler is not None else {"ok": False, "detail": "无调度器"}
                     self._json(200, res)
-                elif p == "/api/tool/run":
-                    txt = str(d.get("text", ""))
-                    inbound = Inbound("onebot11", "private", "test", "test", "测试", [Segment.text(txt)], "m")
-                    out = toolsmod.dispatch(inbound, admin.brain)
-                    self._json(200, {"ok": out is not None, "result": (out.as_text() if out else "")})
                 elif p == "/api/plugins/reload":
                     host = getattr(admin.channel, "host", None)
                     if host is not None:

@@ -261,14 +261,6 @@ class Brain:
                     return _oc
         except Exception:
             pass
-        try:
-            from . import tools as toolsmod
-            _tr = toolsmod.dispatch(inbound, self)
-            if _tr is not None:
-                self._record_user(inbound)
-                return _tr
-        except Exception:
-            pass
         black = self.store.kv_list_get("acl:black")
         white = self.store.kv_list_get("acl:white")
         if inbound.peer_id in black:
