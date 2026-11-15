@@ -101,7 +101,7 @@ class Scheduler:
         if not force and (now - float(self.store.kv_get("autonomy:last", 0) or 0) < float(a.get("min_interval_hours", 6)) * 3600):
             return {"ok": False, "detail": "未到最小间隔"}
         acts = [k for k, flag in (("like", a.get("allow_like")), ("qzone", a.get("allow_qzone_post")),
-                                  ("nick", a.get("allow_nickname"))) if flag]
+                                  ("nick", a.get("allow_nickname")), ("avatar", a.get("allow_avatar"))) if flag]
         if not acts:
             return {"ok": False, "detail": "未勾选任何自主动作"}
         act = random.choice(acts)
@@ -128,6 +128,15 @@ class Scheduler:
                 r = actions.set_nickname(self.channel, "FotlimBOT·今天也元气满满")
                 ok = bool(r and r.get("status") == "ok")
                 detail = "改了昵称"
+            elif act == "avatar":
+                p = self.store.meme_pick(None)
+                if not p:
+                    return {"ok": False, "act": act, "detail": "图库为空，先导入表情"}
+                import base64 as _b64
+                data = _b64.b64encode(open(p, "rb").read()).decode()
+                r = actions.set_avatar(self.channel, "base64://" + data)
+                ok = bool(r and r.get("status") == "ok")
+                detail = "换了头像"
         except Exception as e:
             return {"ok": False, "act": act, "detail": repr(e)[:120]}
         if ok:
